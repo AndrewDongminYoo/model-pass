@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "tsBuildInfoFile": "./.tsbuildinfo",
+    "types": ["vitest/globals"]
+  },
+  "include": ["src"]
+}

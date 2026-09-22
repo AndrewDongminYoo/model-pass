@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "apps-in-toss-console": {
+      "type": "http",
+      "url": "https://mcp.toss.im/adapters/apps-in-toss-console/mcp",
+      "oauth": {
+        "clientId": "mcp-gateway"
+      }
+    },
+    "app-in-toss-docs": {
+      "type": "http",
+      "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
+    }
+  }
+}

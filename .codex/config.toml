@@ -1,0 +1,11 @@
+[mcp_servers]
+
+[mcp_servers.apps-in-toss-console]
+url = "https://mcp.toss.im/adapters/apps-in-toss-console/mcp"
+
+[mcp_servers.apps-in-toss-console.oauth]
+callback_url = "http://127.0.0.1/callback/r6L-yomLOJTg"
+client_id = "mcp-gateway"
+
+[mcp_servers.apps-in-toss-docs]
+url = "https://developers-apps-in-toss.toss.im/~gitbook/mcp"

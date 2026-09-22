@@ -12,6 +12,13 @@ const ALLOWED_CONTENT_TYPES = new Set([
   "image/heic",
   "image/heif",
 ]);
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type ApplicationPhotoStatus =
+  | { status: "pending" }
+  | { status: "unavailable" }
+  | { status: "submitted"; applicationId: string; photoId: string };
 
 export interface RecruiterApplication {
   id: string;
@@ -101,6 +108,24 @@ export async function uploadApplicationPhoto(input: {
     throw new Error("The photo upload response is invalid.");
   }
   return result;
+}
+
+export async function getApplicationPhotoStatus(input: {
+  applicationId: string;
+  opportunityId: string;
+  submissionAttemptId: string;
+}): Promise<ApplicationPhotoStatus> {
+  const { data, error } = await getSupabaseClient().functions.invoke(
+    "create-photo-upload",
+    { body: { action: "status", ...input } },
+  );
+  if (error !== null) {
+    throw error;
+  }
+  if (!isApplicationPhotoStatus(data, input.applicationId)) {
+    throw new Error("The photo application status response is invalid.");
+  }
+  return data;
 }
 
 export async function createPhotoViewUrl(
@@ -198,6 +223,26 @@ function isPhotoUploadResult(value: unknown): value is PhotoUploadResult {
     typeof (value as { applicationId?: unknown }).applicationId === "string" &&
     typeof (value as { photoId?: unknown }).photoId === "string" &&
     (value as { submissionState?: unknown }).submissionState === "submitted"
+  );
+}
+
+function isApplicationPhotoStatus(
+  value: unknown,
+  expectedApplicationId: string,
+): value is ApplicationPhotoStatus {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const status = value as Record<string, unknown>;
+  if (status.status === "pending" || status.status === "unavailable") {
+    return Object.keys(status).length === 1;
+  }
+  return (
+    status.status === "submitted" &&
+    Object.keys(status).length === 3 &&
+    status.applicationId === expectedApplicationId &&
+    typeof status.photoId === "string" &&
+    uuidPattern.test(status.photoId)
   );
 }
 

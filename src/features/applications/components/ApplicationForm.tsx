@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AnswerValue,
   EvaluationResult,
@@ -9,7 +9,10 @@ import {
   ApplicationSubmissionError,
   submitApplication,
 } from "../api/submit-application";
-import { uploadApplicationPhoto } from "../api/application-photos";
+import {
+  getApplicationPhotoStatus,
+  uploadApplicationPhoto,
+} from "../api/application-photos";
 import { EligibilityForm } from "./EligibilityForm";
 import { EligibilityResult } from "./EligibilityResult";
 
@@ -72,13 +75,52 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   const [photoPending, setPhotoPending] = useState(false);
   const [pendingPhotoApplication, setPendingPhotoApplication] = useState<{
     applicationId: string;
-  } | undefined>(() =>
-    restoredPendingPhoto === undefined
-      ? undefined
-      : { applicationId: restoredPendingPhoto.applicationId },
-  );
+  }>();
+  const [restorationStatus, setRestorationStatus] = useState<
+    "idle" | "checking" | "unavailable" | "error"
+  >(restoredPendingPhoto === undefined ? "idle" : "checking");
   const submittingRef = useRef(false);
   const photoUploadingRef = useRef(false);
+
+  useEffect(() => {
+    if (restoredPendingPhoto === undefined) {
+      return;
+    }
+    let active = true;
+    void getApplicationPhotoStatus({
+      applicationId: restoredPendingPhoto.applicationId,
+      opportunityId: opportunity.id,
+      submissionAttemptId: restoredPendingPhoto.submissionAttemptId,
+    })
+      .then((status) => {
+        if (!active) {
+          return;
+        }
+        if (status.status === "submitted") {
+          clearPendingPhotoCapability(opportunity.id);
+          setReceiptId(status.applicationId);
+          setRestorationStatus("idle");
+          return;
+        }
+        if (status.status === "pending") {
+          setPendingPhotoApplication({
+            applicationId: restoredPendingPhoto.applicationId,
+          });
+          setRestorationStatus("idle");
+          return;
+        }
+        clearPendingPhotoCapability(opportunity.id);
+        setRestorationStatus("unavailable");
+      })
+      .catch(() => {
+        if (active) {
+          setRestorationStatus("error");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [opportunity.id, restoredPendingPhoto]);
 
   if (receiptId !== undefined) {
     return (
@@ -87,6 +129,24 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         <p>Receipt: {receiptId}</p>
         <p>Keep this private receipt for your records.</p>
       </section>
+    );
+  }
+
+  if (restorationStatus === "checking") {
+    return <p role="status">Checking photo application status.</p>;
+  }
+
+  if (restorationStatus === "unavailable") {
+    return (
+      <p role="alert">This photo application can no longer be resumed.</p>
+    );
+  }
+
+  if (restorationStatus === "error") {
+    return (
+      <p role="alert">
+        Could not check this photo application. Reload to try again.
+      </p>
     );
   }
 

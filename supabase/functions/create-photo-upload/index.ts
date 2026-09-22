@@ -75,10 +75,6 @@ export interface PhotoUploadDependencies {
   loadCompletedPhoto: (
     input: PhotoApplicationLookup,
   ) => Promise<PhotoUploadResult | null>;
-  loadExactFinalizedUpload: (
-    metadata: PhotoMetadata,
-    tuple: PhotoApplicationLookup,
-  ) => Promise<PhotoUploadResult | null>;
   reportError: (message: string, error: unknown) => void;
 }
 
@@ -105,9 +101,6 @@ interface ApplicationRow {
 interface PhotoRow {
   id: string;
   application_id: string;
-  storage_path: string;
-  content_type: string;
-  byte_size: number;
 }
 
 interface OpportunityRow {
@@ -134,6 +127,13 @@ export class PhotoUploadError extends Error {
   }
 }
 
+export class PhotoFinalizationRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PhotoFinalizationRejectedError";
+  }
+}
+
 export function createPhotoUploadHandler(
   dependencies: PhotoUploadDependencies,
   fixedFunctionUrl?: string,
@@ -146,9 +146,40 @@ export function createPhotoUploadHandler(
     try {
       if (request.method === "POST") {
         const functionUrl = fixedFunctionUrl ?? baseRequestUrl(request.url);
-        const input = parseGrantInput(
-          await readBoundedJson(request, MAX_GRANT_BODY_BYTES),
+        const requestBody = await readBoundedJson(
+          request,
+          MAX_GRANT_BODY_BYTES,
         );
+        if (isStatusAction(requestBody)) {
+          const input = parseApplicationLookup(requestBody);
+          const application = await dependencies.loadApplication(input);
+          if (application === null || !application.photoRequired) {
+            return jsonResponse({ status: "unavailable" }, 200);
+          }
+          if (application.submissionState === "submitted") {
+            const completed = await dependencies.loadCompletedPhoto(input);
+            if (
+              completed !== null &&
+              completed.applicationId === input.applicationId
+            ) {
+              return jsonResponse(
+                {
+                  status: "submitted",
+                  applicationId: completed.applicationId,
+                  photoId: completed.photoId,
+                },
+                200,
+              );
+            }
+            return jsonResponse({ status: "unavailable" }, 200);
+          }
+          if (!isUploadWindowOpen(application, dependencies.now())) {
+            return jsonResponse({ status: "unavailable" }, 200);
+          }
+          return jsonResponse({ status: "pending" }, 200);
+        }
+
+        const input = parseGrantInput(requestBody);
         const application = await dependencies.loadApplication(input);
         if (application === null) {
           throw new PhotoUploadError("Application not found.", 404);
@@ -284,31 +315,40 @@ export function createPhotoUploadHandler(
         }
 
         try {
-          const result = await dependencies.finalizeUpload(metadata, claims);
+          const result = assertExactFinalizationResult(
+            await dependencies.finalizeUpload(metadata, claims),
+            metadata,
+          );
           return jsonResponse(result, 201);
-        } catch (finalizationError) {
-          let finalized: PhotoUploadResult | null;
+        } catch (firstError) {
+          if (firstError instanceof PhotoFinalizationRejectedError) {
+            await compensateUploadFailure(dependencies, claims.storagePath);
+            throw firstError;
+          }
+
           try {
-            finalized = await dependencies.loadExactFinalizedUpload(
+            const result = assertExactFinalizationResult(
+              await dependencies.finalizeUpload(metadata, claims),
               metadata,
-              claims,
             );
-          } catch (verificationError) {
+            return jsonResponse(result, 201);
+          } catch (retryError) {
+            if (retryError instanceof PhotoFinalizationRejectedError) {
+              await compensateUploadFailure(
+                dependencies,
+                claims.storagePath,
+              );
+              throw retryError;
+            }
             dependencies.reportError(
-              "Photo finalization status could not be verified.",
-              { finalizationError, verificationError },
+              "Photo finalization remained ambiguous after retry.",
+              { firstError, retryError },
             );
             throw new PhotoUploadError(
               "Unable to verify the photo upload result.",
               500,
             );
           }
-          if (finalized !== null) {
-            return jsonResponse(finalized, 201);
-          }
-
-          await compensateUploadFailure(dependencies, claims.storagePath);
-          throw finalizationError;
         }
       }
 
@@ -359,6 +399,45 @@ function parseGrantInput(input: unknown): UploadGrantInput {
   }
 
   return value as UploadGrantInput;
+}
+
+function isStatusAction(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { action?: unknown }).action === "status"
+  );
+}
+
+function parseApplicationLookup(input: unknown): PhotoApplicationLookup {
+  if (typeof input !== "object" || input === null) {
+    throw new PhotoUploadError("Invalid photo upload request.", 400);
+  }
+  const value = input as Partial<Record<keyof PhotoApplicationLookup, unknown>>;
+  for (const field of [
+    "applicationId",
+    "opportunityId",
+    "submissionAttemptId",
+  ] as const) {
+    if (typeof value[field] !== "string" || !uuidPattern.test(value[field])) {
+      throw new PhotoUploadError("Invalid photo upload request.", 400);
+    }
+  }
+  return value as PhotoApplicationLookup;
+}
+
+function assertExactFinalizationResult(
+  result: PhotoUploadResult,
+  metadata: PhotoMetadata,
+): PhotoUploadResult {
+  if (
+    result.applicationId !== metadata.applicationId ||
+    result.photoId !== metadata.id ||
+    result.submissionState !== "submitted"
+  ) {
+    throw new Error("Photo finalization returned a mismatched result.");
+  }
+  return result;
 }
 
 async function signClaims(
@@ -451,6 +530,17 @@ function assertUploadWindowOpen(
   ) {
     throw new PhotoUploadError("Photo uploads are closed.", 409);
   }
+}
+
+function isUploadWindowOpen(
+  application: PhotoApplication,
+  now: Date,
+): boolean {
+  return (
+    application.status === "published" &&
+    application.closedAt === null &&
+    Date.parse(application.closesAt) > now.getTime()
+  );
 }
 
 function assertPhotoRequired(application: PhotoApplication): void {
@@ -734,7 +824,9 @@ export function createSupabaseDependencies(
         p_byte_size: metadata.byteSize,
       });
       if (error !== null) {
-        throw new Error(`Failed to finalize photo upload: ${error.message}`);
+        throw new PhotoFinalizationRejectedError(
+          `Failed to finalize photo upload: ${error.message}`,
+        );
       }
       if (
         typeof data !== "object" ||
@@ -766,7 +858,7 @@ export function createSupabaseDependencies(
     async loadCompletedPhoto(input) {
       const { data, error } = await client
         .from("application_photos")
-        .select("id, application_id, storage_path, content_type, byte_size")
+        .select("id, application_id")
         .eq("application_id", input.applicationId)
         .order("created_at", { ascending: true })
         .limit(1)
@@ -781,52 +873,6 @@ export function createSupabaseDependencies(
             photoId: data.id,
             submissionState: "submitted",
           };
-    },
-    async loadExactFinalizedUpload(metadata, tuple) {
-      const { data, error } = await client
-        .from("application_photos")
-        .select("id, application_id, storage_path, content_type, byte_size")
-        .eq("id", metadata.id)
-        .eq("application_id", metadata.applicationId)
-        .eq("storage_path", metadata.storagePath)
-        .eq("content_type", metadata.contentType)
-        .eq("byte_size", metadata.byteSize)
-        .maybeSingle<PhotoRow>();
-      if (error !== null) {
-        throw new Error(
-          `Failed to verify finalized photo metadata: ${error.message}`,
-        );
-      }
-      if (data === null) {
-        return null;
-      }
-
-      const { data: application, error: applicationError } = await client
-        .from("applications")
-        .select("id, submission_state")
-        .eq("id", tuple.applicationId)
-        .eq("opportunity_id", tuple.opportunityId)
-        .eq("submission_attempt_id", tuple.submissionAttemptId)
-        .maybeSingle<{ id: string; submission_state: string }>();
-      if (applicationError !== null) {
-        throw new Error(
-          `Failed to verify finalized application state: ${applicationError.message}`,
-        );
-      }
-      if (
-        application === null ||
-        application.id !== data.application_id ||
-        application.submission_state !== "submitted"
-      ) {
-        throw new Error(
-          "Finalized photo metadata has no matching submitted application.",
-        );
-      }
-      return {
-        applicationId: data.application_id,
-        photoId: data.id,
-        submissionState: "submitted",
-      };
     },
     reportError(message, error) {
       console.error(message, error);

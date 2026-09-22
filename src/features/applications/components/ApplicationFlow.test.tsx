@@ -13,10 +13,12 @@ import { ApplyPage } from "../routes/ApplyPage";
 import { ApplicationForm } from "./ApplicationForm";
 
 const {
+  getApplicationPhotoStatusMock,
   getPublicOpportunityMock,
   submitApplicationMock,
   uploadApplicationPhotoMock,
 } = vi.hoisted(() => ({
+  getApplicationPhotoStatusMock: vi.fn(),
   getPublicOpportunityMock: vi.fn(),
   submitApplicationMock: vi.fn(),
   uploadApplicationPhotoMock: vi.fn(),
@@ -37,7 +39,11 @@ vi.mock("../api/submit-application", async (importOriginal) => {
 vi.mock("../api/application-photos", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("../api/application-photos")>();
-  return { ...original, uploadApplicationPhoto: uploadApplicationPhotoMock };
+  return {
+    ...original,
+    getApplicationPhotoStatus: getApplicationPhotoStatusMock,
+    uploadApplicationPhoto: uploadApplicationPhotoMock,
+  };
 });
 
 const opportunityId = "00000000-0000-4000-8000-000000000001";
@@ -117,10 +123,24 @@ it("restores a valid opportunity-scoped pending photo capability", async () => {
     pendingStorageKey,
     JSON.stringify(pendingPhotoCapability()),
   );
+  let resolveStatus: ((value: { status: "pending" }) => void) | undefined;
+  getApplicationPhotoStatusMock.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+  );
   render(<ApplicationForm opportunity={photoOpportunity} />);
 
   expect(
-    screen.getByRole("heading", { name: "Photo required to finish" }),
+    screen.getByRole("status"),
+  ).toHaveTextContent("Checking photo application status");
+  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  await act(async () => {
+    resolveStatus?.({ status: "pending" });
+  });
+  expect(
+    await screen.findByRole("heading", { name: "Photo required to finish" }),
   ).toBeVisible();
   expect(screen.queryByLabelText("Display name")).not.toBeInTheDocument();
 
@@ -142,6 +162,100 @@ it("restores a valid opportunity-scoped pending photo capability", async () => {
     submissionAttemptId: pendingAttemptId,
     file,
   });
+  expect(getApplicationPhotoStatusMock).toHaveBeenCalledWith({
+    applicationId,
+    opportunityId,
+    submissionAttemptId: pendingAttemptId,
+  });
+});
+
+it("restores a receipt when another tab already completed the photo", async () => {
+  // Production break: asking for another file after authoritative completion creates needless sensitive-data collection.
+  localStorage.setItem(
+    pendingStorageKey,
+    JSON.stringify(pendingPhotoCapability()),
+  );
+  getApplicationPhotoStatusMock.mockResolvedValue({
+    status: "submitted",
+    applicationId,
+    photoId: "00000000-0000-4000-8000-000000000301",
+  });
+  render(<ApplicationForm opportunity={photoOpportunity} />);
+
+  expect(
+    await screen.findByRole("heading", { name: "Application received" }),
+  ).toBeVisible();
+  expect(screen.getByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  expect(uploadApplicationPhotoMock).not.toHaveBeenCalled();
+  expect(localStorage.getItem(pendingStorageKey)).toBeNull();
+});
+
+it("clears an unavailable restored capability with an explicit message", async () => {
+  // Production break: an early closure or non-pending server state must not leave a stale picker or generic upload error.
+  localStorage.setItem(
+    pendingStorageKey,
+    JSON.stringify(pendingPhotoCapability()),
+  );
+  getApplicationPhotoStatusMock.mockResolvedValue({ status: "unavailable" });
+  render(<ApplicationForm opportunity={photoOpportunity} />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "This photo application can no longer be resumed.",
+  );
+  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  expect(localStorage.getItem(pendingStorageKey)).toBeNull();
+});
+
+it("keeps the capability but shows an explicit status error", async () => {
+  // Production break: a transient status failure must not expose the picker or destroy a retryable capability.
+  localStorage.setItem(
+    pendingStorageKey,
+    JSON.stringify(pendingPhotoCapability()),
+  );
+  getApplicationPhotoStatusMock.mockRejectedValue(
+    new Error("status unavailable"),
+  );
+  render(<ApplicationForm opportunity={photoOpportunity} />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Could not check this photo application. Reload to try again.",
+  );
+  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  expect(localStorage.getItem(pendingStorageKey)).not.toBeNull();
+});
+
+it("ignores a restored status response after unmount", async () => {
+  // Production break: a late route response must not clear capability data or update an application form that has left the page.
+  localStorage.setItem(
+    pendingStorageKey,
+    JSON.stringify(pendingPhotoCapability()),
+  );
+  let resolveStatus:
+    | ((value: {
+        status: "submitted";
+        applicationId: string;
+        photoId: string;
+      }) => void)
+    | undefined;
+  getApplicationPhotoStatusMock.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        resolveStatus = resolve;
+      }),
+  );
+  const view = render(<ApplicationForm opportunity={photoOpportunity} />);
+  view.unmount();
+
+  await act(async () => {
+    resolveStatus?.({
+      status: "submitted",
+      applicationId,
+      photoId: "00000000-0000-4000-8000-000000000301",
+    });
+  });
+
+  expect(localStorage.getItem(pendingStorageKey)).not.toBeNull();
 });
 
 it("rejects and clears expired or ruleset-mismatched pending capabilities", () => {

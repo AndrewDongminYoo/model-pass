@@ -1,24 +1,71 @@
 import { afterEach, expect, it, vi } from "vitest";
 
-const { fromMock, getUserMock } = vi.hoisted(() => ({
+const { fromMock, getUserMock, invokeMock } = vi.hoisted(() => ({
   fromMock: vi.fn(),
   getUserMock: vi.fn(),
+  invokeMock: vi.fn(),
 }));
 
 vi.mock("../../../lib/supabase/client", () => ({
   getSupabaseClient: () => ({
     auth: { getUser: getUserMock },
     from: fromMock,
+    functions: { invoke: invokeMock },
   }),
 }));
 
 import {
   RecruiterAuthenticationError,
+  getApplicationPhotoStatus,
   getRecruiterApplications,
 } from "./application-photos";
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+it("validates the exact restored photo status contract", async () => {
+  const input = {
+    applicationId: "00000000-0000-4000-8000-000000000101",
+    opportunityId: "00000000-0000-4000-8000-000000000001",
+    submissionAttemptId: "00000000-0000-4000-8000-000000000201",
+  };
+  invokeMock.mockResolvedValueOnce({
+    data: { status: "pending" },
+    error: null,
+  });
+  await expect(getApplicationPhotoStatus(input)).resolves.toEqual({
+    status: "pending",
+  });
+  expect(invokeMock).toHaveBeenLastCalledWith("create-photo-upload", {
+    body: { action: "status", ...input },
+  });
+
+  invokeMock.mockResolvedValueOnce({
+    data: {
+      status: "submitted",
+      applicationId: input.applicationId,
+      photoId: "00000000-0000-4000-8000-000000000301",
+    },
+    error: null,
+  });
+  await expect(getApplicationPhotoStatus(input)).resolves.toEqual({
+    status: "submitted",
+    applicationId: input.applicationId,
+    photoId: "00000000-0000-4000-8000-000000000301",
+  });
+
+  invokeMock.mockResolvedValueOnce({
+    data: {
+      status: "submitted",
+      applicationId: "00000000-0000-4000-8000-000000000999",
+      photoId: "00000000-0000-4000-8000-000000000301",
+    },
+    error: null,
+  });
+  await expect(getApplicationPhotoStatus(input)).rejects.toThrow(
+    "invalid",
+  );
 });
 
 it("rejects an unauthenticated recruiter before starting an RLS read", async () => {

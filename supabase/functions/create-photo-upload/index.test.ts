@@ -1,6 +1,8 @@
 import {
+  PhotoFinalizationRejectedError,
   PhotoUploadError,
   createPhotoUploadHandler,
+  createSupabaseDependencies,
   validatePhotoUploadSigningSecret,
   type PhotoApplication,
   type PhotoMetadata,
@@ -98,6 +100,95 @@ registerTest(
       assertEquals(response.status, 409);
       assertEquals(fixture.uploads.length, 0);
     }
+  },
+);
+
+registerTest(
+  "returns bounded authoritative status without minting a grant",
+  async () => {
+    // Production break: restored browser state must be checked without creating fresh upload authority or exposing another tuple.
+    const pending = createFixture();
+    const pendingResponse = await checkStatus(
+      createPhotoUploadHandler(pending.dependencies, functionUrl),
+    );
+    assertEquals(await readJson(pendingResponse), { status: "pending" });
+    assertEquals(pending.uploads.length, 0);
+
+    const submitted = createFixture({
+      submissionState: "submitted",
+      completedPhotoId: photoId,
+    });
+    assertEquals(
+      await readJson(
+        await checkStatus(
+          createPhotoUploadHandler(submitted.dependencies, functionUrl),
+        ),
+      ),
+      { status: "submitted", applicationId, photoId },
+    );
+
+    for (const fixture of [
+      createFixture({ photoRequired: false }),
+      createFixture({ closed: true }),
+    ]) {
+      assertEquals(
+        await readJson(
+          await checkStatus(
+            createPhotoUploadHandler(fixture.dependencies, functionUrl),
+          ),
+        ),
+        { status: "unavailable" },
+      );
+    }
+    assertEquals(
+      await readJson(
+        await checkStatus(
+          createPhotoUploadHandler(pending.dependencies, functionUrl),
+          {
+            applicationId:
+              "00000000-0000-4000-8000-000000000999",
+          },
+        ),
+      ),
+      { status: "unavailable" },
+    );
+  },
+);
+
+registerTest(
+  "classifies only returned RPC database errors as known rollbacks",
+  async () => {
+    // Production break: transport and malformed-success failures have unknown commit status and must not be compensatable rejections.
+    const metadata: PhotoMetadata = {
+      id: photoId,
+      applicationId,
+      storagePath: expectedPath(),
+      contentType: "image/jpeg",
+      byteSize: 3,
+      expiresAt: "2026-10-30T03:00:00.000Z",
+    };
+    const rejected = createSupabaseDependencies(
+      {
+        rpc: () =>
+          Promise.resolve({ data: null, error: { message: "rolled back" } }),
+      } as never,
+      "test-signing-secret-with-sufficient-length",
+    );
+    const rejection = await captureError(() =>
+      rejected.finalizeUpload(metadata, validGrantRequest()),
+    );
+    assert(rejection instanceof PhotoFinalizationRejectedError);
+
+    const malformed = createSupabaseDependencies(
+      {
+        rpc: () => Promise.resolve({ data: { applicationId }, error: null }),
+      } as never,
+      "test-signing-secret-with-sufficient-length",
+    );
+    const ambiguity = await captureError(() =>
+      malformed.finalizeUpload(metadata, validGrantRequest()),
+    );
+    assert(!(ambiguity instanceof PhotoFinalizationRejectedError));
   },
 );
 
@@ -371,7 +462,6 @@ registerTest(
       "reserve",
       "storage",
       "finalize",
-      "verify",
       "remove",
       "release",
     ]);
@@ -396,7 +486,12 @@ registerTest(
       photoId,
       submissionState: "submitted",
     });
-    assertEquals(fixture.events, ["reserve", "storage", "finalize", "verify"]);
+    assertEquals(fixture.events, [
+      "reserve",
+      "storage",
+      "finalize",
+      "finalize",
+    ]);
     assertEquals(fixture.removals, []);
     assertEquals(fixture.reservations, []);
   },
@@ -407,8 +502,7 @@ registerTest(
   async () => {
     // Production break: deleting storage when the exact commit check errors can break a committed submitted application.
     const fixture = createFixture({
-      metadataFailure: true,
-      finalizationVerificationFailure: true,
+      finalizationAlwaysAmbiguous: true,
     });
     const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
     const grant = (await readJson(
@@ -418,7 +512,12 @@ registerTest(
     const response = await upload(handler, grant, bytes(3), "image/jpeg");
 
     assertEquals(response.status, 500);
-    assertEquals(fixture.events, ["reserve", "storage", "finalize", "verify"]);
+    assertEquals(fixture.events, [
+      "reserve",
+      "storage",
+      "finalize",
+      "finalize",
+    ]);
     assertEquals(fixture.removals, []);
     assertEquals(fixture.reservations, [expectedPath()]);
   },
@@ -445,7 +544,6 @@ registerTest(
       "reserve",
       "storage",
       "finalize",
-      "verify",
       "remove",
     ]);
   },
@@ -470,6 +568,30 @@ registerTest("does not overwrite or reuse an uploaded object", async () => {
   assertEquals(fixture.metadata.length, 1);
 });
 
+registerTest(
+  "rejects cross-application finalization results without compensation",
+  async () => {
+    // Production break: a malformed success body must never substitute another applicant's receipt or justify object deletion.
+    const fixture = createFixture({ malformedFinalizationResult: true });
+    const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+    const grant = (await readJson(
+      await issueGrant(handler, validGrantRequest()),
+    )) as { uploadUrl: string; storagePath: string };
+
+    const response = await upload(handler, grant, bytes(3), "image/jpeg");
+
+    assertEquals(response.status, 500);
+    assertEquals(fixture.events, [
+      "reserve",
+      "storage",
+      "finalize",
+      "finalize",
+    ]);
+    assertEquals(fixture.removals, []);
+    assertEquals(fixture.reservations, [expectedPath()]);
+  },
+);
+
 function createFixture(
   options: {
     closesAtAfterStorage?: string;
@@ -479,7 +601,9 @@ function createFixture(
     submissionState?: "pending_photo" | "submitted";
     completedPhotoId?: string;
     finalizationCommittedResponseLoss?: boolean;
-    finalizationVerificationFailure?: boolean;
+    finalizationAlwaysAmbiguous?: boolean;
+    malformedFinalizationResult?: boolean;
+    closed?: boolean;
   } = {},
 ) {
   let currentTime = now;
@@ -489,8 +613,8 @@ function createFixture(
     opportunityId,
     submissionAttemptId,
     closesAt: "2026-09-30T03:00:00.000Z",
-    closedAt: null,
-    status: "published",
+    closedAt: options.closed ? "2026-09-22T03:00:00.000Z" : null,
+    status: options.closed ? "closed" : "published",
     photoRequired: options.photoRequired ?? true,
     submissionState: options.submissionState ?? "pending_photo",
   };
@@ -538,16 +662,39 @@ function createFixture(
     async finalizeUpload(value) {
       events.push("finalize");
       if (options.metadataFailure) {
-        throw new Error("metadata failed");
+        throw new PhotoFinalizationRejectedError("metadata failed");
+      }
+      if (options.finalizationAlwaysAmbiguous) {
+        throw new Error("transport outcome unknown");
+      }
+      if (options.finalizationCommittedResponseLoss) {
+        if (metadata.length === 0) {
+          metadata.push(value);
+          application.submissionState = "submitted";
+          const index = reservations.indexOf(value.storagePath);
+          if (index >= 0) {
+            reservations.splice(index, 1);
+          }
+          throw new Error("finalization response lost");
+        }
+        return {
+          applicationId,
+          photoId: value.id,
+          submissionState: "submitted" as const,
+        };
+      }
+      if (options.malformedFinalizationResult) {
+        return {
+          applicationId: "00000000-0000-4000-8000-000000000999",
+          photoId: value.id,
+          submissionState: "submitted" as const,
+        };
       }
       metadata.push(value);
       application.submissionState = "submitted";
       const index = reservations.indexOf(value.storagePath);
       if (index >= 0) {
         reservations.splice(index, 1);
-      }
-      if (options.finalizationCommittedResponseLoss) {
-        throw new Error("finalization response lost");
       }
       return {
         applicationId,
@@ -582,34 +729,6 @@ function createFixture(
         };
       }
       return null;
-    },
-    async loadExactFinalizedUpload(value, tuple) {
-      events.push("verify");
-      if (options.finalizationVerificationFailure) {
-        throw new Error("verification unavailable");
-      }
-      const exact = metadata.find(
-        (candidate) =>
-          candidate.id === value.id &&
-          candidate.applicationId === value.applicationId &&
-          candidate.storagePath === value.storagePath &&
-          candidate.contentType === value.contentType &&
-          candidate.byteSize === value.byteSize,
-      );
-      if (
-        exact === undefined ||
-        tuple.applicationId !== application.applicationId ||
-        tuple.opportunityId !== application.opportunityId ||
-        tuple.submissionAttemptId !== application.submissionAttemptId ||
-        application.submissionState !== "submitted"
-      ) {
-        return null;
-      }
-      return {
-        applicationId: exact.applicationId,
-        photoId: exact.id,
-        submissionState: "submitted" as const,
-      };
     },
     reportError() {},
   };
@@ -693,6 +812,25 @@ function issueGrant(
   );
 }
 
+function checkStatus(
+  handler: (request: Request) => Promise<Response>,
+  overrides: Record<string, unknown> = {},
+) {
+  return handler(
+    new Request(functionUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "status",
+        applicationId,
+        opportunityId,
+        submissionAttemptId,
+        ...overrides,
+      }),
+    }),
+  );
+}
+
 function upload(
   handler: (request: Request) => Promise<Response>,
   grant: { uploadUrl: string; storagePath: string },
@@ -717,6 +855,15 @@ function bytes(length: number): Uint8Array {
 
 async function readJson(response: Response): Promise<unknown> {
   return await response.json();
+}
+
+async function captureError(operation: () => Promise<unknown>) {
+  try {
+    await operation();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected operation to reject");
 }
 
 function assert(condition: unknown, message = "Expected condition to be true") {

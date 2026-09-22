@@ -1,3 +1,12 @@
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { NewOpportunityPage } from "../features/opportunities/routes/NewOpportunityPage";
+
 export function App() {
-  return <h1>Model Pass</h1>;
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="*" element={<NewOpportunityPage />} />
+      </Routes>
+    </BrowserRouter>
+  );
 }

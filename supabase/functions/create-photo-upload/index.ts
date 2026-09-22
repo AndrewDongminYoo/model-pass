@@ -1,4 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { isEvaluationResult } from "../../../src/features/applications/domain/application.ts";
+import { parseRuleDefinitions } from "../../../src/features/eligibility/domain/types.ts";
 
 const BUCKET_ID = "application-photos";
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
@@ -23,6 +25,8 @@ export interface PhotoApplication {
   closesAt: string;
   closedAt: string | null;
   status: string;
+  photoRequired: boolean;
+  submissionState: "pending_photo" | "submitted";
 }
 
 interface PhotoApplicationLookup {
@@ -42,6 +46,12 @@ export interface PhotoMetadata {
 
 export type PhotoUploadReservation = Omit<PhotoMetadata, "expiresAt">;
 
+export interface PhotoUploadResult {
+  applicationId: string;
+  photoId: string;
+  submissionState: "submitted";
+}
+
 export interface PhotoUploadDependencies {
   now: () => Date;
   createPhotoId: () => string;
@@ -56,9 +66,15 @@ export interface PhotoUploadDependencies {
     contentType: string,
     options: { upsert: false },
   ) => Promise<void>;
-  insertMetadata: (metadata: PhotoMetadata) => Promise<void>;
+  finalizeUpload: (
+    metadata: PhotoMetadata,
+    tuple: PhotoApplicationLookup,
+  ) => Promise<PhotoUploadResult>;
   removeObject: (path: string) => Promise<void>;
   releaseReservation: (storagePath: string) => Promise<void>;
+  loadCompletedPhoto: (
+    input: PhotoApplicationLookup,
+  ) => Promise<PhotoUploadResult | null>;
   reportError: (message: string, error: unknown) => void;
 }
 
@@ -77,6 +93,14 @@ interface ApplicationRow {
   id: string;
   opportunity_id: string;
   submission_attempt_id: string;
+  submission_state: string;
+  rules_snapshot: unknown;
+  evaluation_snapshot: unknown;
+}
+
+interface PhotoRow {
+  id: string;
+  application_id: string;
 }
 
 interface OpportunityRow {
@@ -121,6 +145,17 @@ export function createPhotoUploadHandler(
         const application = await dependencies.loadApplication(input);
         if (application === null) {
           throw new PhotoUploadError("Application not found.", 404);
+        }
+        assertPhotoRequired(application);
+        if (application.submissionState === "submitted") {
+          const completed = await dependencies.loadCompletedPhoto(input);
+          if (completed !== null) {
+            return jsonResponse(completed, 200);
+          }
+          throw new PhotoUploadError(
+            "This application does not accept a photo upload.",
+            409,
+          );
         }
         assertUploadWindowOpen(application, dependencies.now());
 
@@ -188,6 +223,8 @@ export function createPhotoUploadHandler(
         if (application === null) {
           throw new PhotoUploadError("Application not found.", 404);
         }
+        assertPhotoRequired(application);
+        assertPhotoPending(application);
         assertUploadWindowOpen(application, dependencies.now());
 
         const body = await readBoundedBytes(request, claims.byteSize);
@@ -227,12 +264,17 @@ export function createPhotoUploadHandler(
           if (currentApplication === null) {
             throw new PhotoUploadError("Application not found.", 404);
           }
+          assertPhotoRequired(currentApplication);
           assertUploadWindowOpen(currentApplication, dependencies.now());
           const retentionExpiresAt = retentionFor(currentApplication);
-          await dependencies.insertMetadata({
-            ...reservation,
-            expiresAt: retentionExpiresAt,
-          });
+          const result = await dependencies.finalizeUpload(
+            {
+              ...reservation,
+              expiresAt: retentionExpiresAt,
+            },
+            claims,
+          );
+          return jsonResponse(result, 201);
         } catch (error) {
           try {
             await dependencies.removeObject(claims.storagePath);
@@ -248,17 +290,6 @@ export function createPhotoUploadHandler(
           }
           throw error;
         }
-
-        try {
-          await dependencies.releaseReservation(claims.storagePath);
-        } catch (error) {
-          dependencies.reportError(
-            "Photo upload reservation cleanup failed.",
-            error,
-          );
-        }
-
-        return jsonResponse({ photoId: claims.photoId }, 201);
       }
 
       return jsonResponse({ error: "Method not allowed." }, 405);
@@ -399,6 +430,24 @@ function assertUploadWindowOpen(
     Date.parse(application.closesAt) <= now.getTime()
   ) {
     throw new PhotoUploadError("Photo uploads are closed.", 409);
+  }
+}
+
+function assertPhotoRequired(application: PhotoApplication): void {
+  if (!application.photoRequired) {
+    throw new PhotoUploadError(
+      "This application does not require a photo.",
+      409,
+    );
+  }
+}
+
+function assertPhotoPending(application: PhotoApplication): void {
+  if (application.submissionState !== "pending_photo") {
+    throw new PhotoUploadError(
+      "This application does not accept a photo upload.",
+      409,
+    );
   }
 }
 
@@ -546,7 +595,9 @@ export function createSupabaseDependencies(
     async loadApplication(input) {
       const { data: application, error: applicationError } = await client
         .from("applications")
-        .select("id, opportunity_id, submission_attempt_id")
+        .select(
+          "id, opportunity_id, submission_attempt_id, submission_state, rules_snapshot, evaluation_snapshot",
+        )
         .eq("id", input.applicationId)
         .eq("opportunity_id", input.opportunityId)
         .eq("submission_attempt_id", input.submissionAttemptId)
@@ -559,6 +610,30 @@ export function createSupabaseDependencies(
       if (application === null) {
         return null;
       }
+      if (
+        application.submission_state !== "pending_photo" &&
+        application.submission_state !== "submitted"
+      ) {
+        throw new Error("Stored application submission state is invalid.");
+      }
+      const rules = parseRuleDefinitions(application.rules_snapshot);
+      if (!isEvaluationResult(application.evaluation_snapshot)) {
+        throw new Error("Stored application evaluation is invalid.");
+      }
+      const reviewRuleIds = new Set(
+        rules
+          .filter(
+            (rule) =>
+              rule.effect === "needs_review" &&
+              rule.field.toLowerCase().includes("photo"),
+          )
+          .map((rule) => rule.id),
+      );
+      const photoRequired = application.evaluation_snapshot.reviews.some(
+        (outcome) =>
+          outcome.effect === "needs_review" &&
+          reviewRuleIds.has(outcome.ruleId),
+      );
 
       const { data: opportunity, error: opportunityError } = await client
         .from("opportunities")
@@ -581,6 +656,8 @@ export function createSupabaseDependencies(
         closesAt: opportunity.closes_at,
         closedAt: opportunity.closed_at,
         status: opportunity.status,
+        photoRequired,
+        submissionState: application.submission_state,
       };
     },
     async reserveUpload(reservation) {
@@ -614,18 +691,30 @@ export function createSupabaseDependencies(
         throw new Error(`Failed to store photo: ${error.message}`);
       }
     },
-    async insertMetadata(metadata) {
-      const { error } = await client.from("application_photos").insert({
-        id: metadata.id,
-        application_id: metadata.applicationId,
-        storage_path: metadata.storagePath,
-        content_type: metadata.contentType,
-        byte_size: metadata.byteSize,
-        expires_at: metadata.expiresAt,
+    async finalizeUpload(metadata, tuple) {
+      const { data, error } = await client.rpc("finalize_application_photo", {
+        p_photo_id: metadata.id,
+        p_application_id: metadata.applicationId,
+        p_opportunity_id: tuple.opportunityId,
+        p_submission_attempt_id: tuple.submissionAttemptId,
+        p_storage_path: metadata.storagePath,
+        p_content_type: metadata.contentType,
+        p_byte_size: metadata.byteSize,
       });
       if (error !== null) {
-        throw new Error(`Failed to record photo metadata: ${error.message}`);
+        throw new Error(`Failed to finalize photo upload: ${error.message}`);
       }
+      if (
+        typeof data !== "object" ||
+        data === null ||
+        (data as { applicationId?: unknown }).applicationId !==
+          metadata.applicationId ||
+        (data as { photoId?: unknown }).photoId !== metadata.id ||
+        (data as { submissionState?: unknown }).submissionState !== "submitted"
+      ) {
+        throw new Error("Photo finalization returned an invalid result.");
+      }
+      return data as PhotoUploadResult;
     },
     async removeObject(path) {
       const { error } = await client.storage.from(BUCKET_ID).remove([path]);
@@ -641,6 +730,25 @@ export function createSupabaseDependencies(
       if (error !== null) {
         throw new Error(`Failed to release photo upload: ${error.message}`);
       }
+    },
+    async loadCompletedPhoto(input) {
+      const { data, error } = await client
+        .from("application_photos")
+        .select("id, application_id")
+        .eq("application_id", input.applicationId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle<PhotoRow>();
+      if (error !== null) {
+        throw new Error(`Failed to load completed photo: ${error.message}`);
+      }
+      return data === null
+        ? null
+        : {
+            applicationId: data.application_id,
+            photoId: data.id,
+            submissionState: "submitted",
+          };
     },
     reportError(message, error) {
       console.error(message, error);

@@ -50,13 +50,15 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   const [submitError, setSubmitError] = useState<string>();
   const [pending, setPending] = useState(false);
   const [receiptId, setReceiptId] = useState<string>();
-  const [receiptEvaluation, setReceiptEvaluation] =
-    useState<EvaluationResult>();
   const [photo, setPhoto] = useState<File>();
   const [photoError, setPhotoError] = useState<string>();
   const [photoPending, setPhotoPending] = useState(false);
-  const [photoUploaded, setPhotoUploaded] = useState(false);
+  const [pendingPhotoApplication, setPendingPhotoApplication] = useState<{
+    applicationId: string;
+    evaluation: EvaluationResult;
+  }>();
   const submittingRef = useRef(false);
+  const photoUploadingRef = useRef(false);
 
   if (receiptId !== undefined) {
     return (
@@ -64,53 +66,66 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         <h2 id="application-received-heading">Application received</h2>
         <p>Receipt: {receiptId}</p>
         <p>Keep this private receipt for your records.</p>
-        {hasRequestedPhotoOutcome(opportunity, receiptEvaluation) ? (
-          <div>
-            <label htmlFor="job-specific-photo">Job-specific photo</label>
-            <input
-              id="job-specific-photo"
-              type="file"
-              accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
-              disabled={photoPending || photoUploaded}
-              onChange={(event) => {
-                setPhoto(event.currentTarget.files?.[0]);
-                setPhotoError(undefined);
-                setPhotoUploaded(false);
-              }}
-            />
-            <p>JPEG, PNG, HEIC, or HEIF. Maximum 10 MiB.</p>
-            <button
-              type="button"
-              disabled={photo === undefined || photoPending || photoUploaded}
-              onClick={() => void handlePhotoUpload(receiptId)}
-            >
-              {photoPending ? "Uploading photo" : "Upload photo"}
-            </button>
-            {photoError ? <p role="alert">{photoError}</p> : null}
-            {photoUploaded ? <p>Photo uploaded privately.</p> : null}
-          </div>
-        ) : null}
+      </section>
+    );
+  }
+
+  if (
+    pendingPhotoApplication !== undefined &&
+    hasRequestedPhotoOutcome(opportunity, pendingPhotoApplication.evaluation)
+  ) {
+    return (
+      <section aria-labelledby="photo-required-heading">
+        <h2 id="photo-required-heading">Photo required to finish</h2>
+        <label htmlFor="job-specific-photo">Job-specific photo</label>
+        <input
+          id="job-specific-photo"
+          type="file"
+          accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
+          disabled={photoPending}
+          onChange={(event) => {
+            setPhoto(event.currentTarget.files?.[0]);
+            setPhotoError(undefined);
+          }}
+        />
+        <p>JPEG, PNG, HEIC, or HEIF. Maximum 10 MiB.</p>
+        <button
+          type="button"
+          disabled={photo === undefined || photoPending}
+          onClick={() =>
+            void handlePhotoUpload(pendingPhotoApplication.applicationId)
+          }
+        >
+          {photoPending ? "Uploading photo" : "Upload photo"}
+        </button>
+        {photoError ? <p role="alert">{photoError}</p> : null}
       </section>
     );
   }
 
   async function handlePhotoUpload(applicationId: string) {
-    if (photo === undefined || photoPending) {
+    if (photo === undefined || photoUploadingRef.current) {
       return;
     }
+    photoUploadingRef.current = true;
     setPhotoPending(true);
     setPhotoError(undefined);
     try {
-      await uploadApplicationPhoto({
+      const result = await uploadApplicationPhoto({
         applicationId,
         opportunityId: opportunity.id,
         submissionAttemptId,
         file: photo,
       });
-      setPhotoUploaded(true);
+      if (result.applicationId !== applicationId) {
+        throw new Error("The photo upload completed for another application.");
+      }
+      setReceiptId(result.applicationId);
+      setPendingPhotoApplication(undefined);
     } catch {
       setPhotoError("Could not upload the photo. Try again.");
     } finally {
+      photoUploadingRef.current = false;
       setPhotoPending(false);
     }
   }
@@ -170,8 +185,17 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         currentApplicationConsent: true,
         futureOpportunityConsent: contact.futureOpportunityConsent,
       });
-      setReceiptId(result.applicationId);
-      setReceiptEvaluation(result.evaluation);
+      if (result.submissionState === "pending_photo") {
+        if (!hasRequestedPhotoOutcome(opportunity, result.evaluation)) {
+          throw new Error("The pending photo response is invalid.");
+        }
+        setPendingPhotoApplication({
+          applicationId: result.applicationId,
+          evaluation: result.evaluation,
+        });
+      } else {
+        setReceiptId(result.applicationId);
+      }
     } catch (error) {
       if (error instanceof ApplicationSubmissionError) {
         if (error.evaluation !== undefined && !error.evaluation.eligible) {

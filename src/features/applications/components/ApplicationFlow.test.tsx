@@ -514,6 +514,7 @@ function expectAssociatedError(
 function successfulSubmission() {
   return {
     applicationId,
+    submissionState: "submitted" as const,
     evaluation: {
       rulesetId: "makeup-certification",
       rulesetVersion: 1,

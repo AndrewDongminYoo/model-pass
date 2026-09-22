@@ -61,7 +61,7 @@ export async function uploadApplicationPhoto(input: {
   opportunityId: string;
   submissionAttemptId: string;
   file: File;
-}): Promise<{ photoId: string }> {
+}): Promise<PhotoUploadResult> {
   validatePhoto(input.file);
   const { data, error } = await getSupabaseClient().functions.invoke(
     "create-photo-upload",
@@ -77,6 +77,9 @@ export async function uploadApplicationPhoto(input: {
   );
   if (error !== null) {
     throw error;
+  }
+  if (isPhotoUploadResult(data)) {
+    return data;
   }
   if (!isUploadGrant(data)) {
     throw new Error("The photo upload grant is invalid.");
@@ -137,6 +140,7 @@ export async function getRecruiterApplications(
       "id, created_at, applicant_display_name, applicant_phone, evaluation_snapshot, application_answers(field, value), application_photos(id, content_type, byte_size), attendance_events(id, party, event_type, occurred_at)",
     )
     .eq("opportunity_id", opportunityId)
+    .eq("submission_state", "submitted")
     .order("created_at", { ascending: true })
     .order("id", { ascending: true });
   if (error !== null) {
@@ -181,11 +185,19 @@ function isUploadGrant(value: unknown): value is {
   );
 }
 
-function isPhotoUploadResult(value: unknown): value is { photoId: string } {
+interface PhotoUploadResult {
+  applicationId: string;
+  photoId: string;
+  submissionState: "submitted";
+}
+
+function isPhotoUploadResult(value: unknown): value is PhotoUploadResult {
   return (
     typeof value === "object" &&
     value !== null &&
-    typeof (value as { photoId?: unknown }).photoId === "string"
+    typeof (value as { applicationId?: unknown }).applicationId === "string" &&
+    typeof (value as { photoId?: unknown }).photoId === "string" &&
+    (value as { submissionState?: unknown }).submissionState === "submitted"
   );
 }
 

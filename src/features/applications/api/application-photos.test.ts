@@ -59,6 +59,7 @@ it("orders authenticated applications by created_at and application ID", async (
     ascending: true,
   });
   expect(orderMock).toHaveBeenNthCalledWith(2, "id", { ascending: true });
+  expect(query.eq).toHaveBeenNthCalledWith(2, "submission_state", "submitted");
   expect(applications.map(({ id }) => id)).toEqual([
     "00000000-0000-4000-8000-000000000101",
     "00000000-0000-4000-8000-000000000102",

@@ -115,25 +115,57 @@ it("the applicant upload wrapper resolves only after the signed storage request 
   );
 
   resolveStorage?.(
-    new Response(JSON.stringify({ photoId }), {
+    new Response(
+      JSON.stringify({ applicationId, photoId, submissionState: "submitted" }),
+      {
       status: 201,
       headers: { "Content-Type": "application/json" },
-    }),
+      },
+    ),
   );
-  await expect(upload).resolves.toEqual({ photoId });
+  await expect(upload).resolves.toEqual({
+    applicationId,
+    photoId,
+    submissionState: "submitted",
+  });
 });
 
-it("preserves the private receipt when photo upload fails and supports retry", async () => {
-  // Production break: replacing the receipt with an upload error loses the applicant's submission proof.
+it("recovers a finalized upload without issuing another storage request", async () => {
+  // Production break: losing the PUT response must not strand a submitted applicant or create a duplicate photo.
+  const { uploadApplicationPhoto } = await vi.importActual<
+    typeof import("../../applications/api/application-photos")
+  >("../../applications/api/application-photos");
+  supabaseClientMock.functions.invoke.mockResolvedValue({
+    data: { applicationId, photoId, submissionState: "submitted" },
+    error: null,
+  });
+  const fetchMock = vi.fn();
+  vi.stubGlobal("fetch", fetchMock);
+
+  await expect(
+    uploadApplicationPhoto({
+      applicationId,
+      opportunityId,
+      submissionAttemptId: "00000000-0000-4000-8000-000000000201",
+      file: new File([new Uint8Array([1, 2, 3])], "requested.png", {
+        type: "image/png",
+      }),
+    }),
+  ).resolves.toEqual({ applicationId, photoId, submissionState: "submitted" });
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
+it("withholds the receipt when photo upload fails and supports retry", async () => {
+  // Production break: showing a receipt for pending_photo exposes an incomplete application to the applicant as submitted.
   const user = userEvent.setup();
   submitApplicationMock.mockResolvedValue(successfulSubmission());
   uploadApplicationPhotoMock
     .mockRejectedValueOnce(new Error("upload failed"))
-    .mockResolvedValueOnce({ photoId });
+    .mockResolvedValueOnce({ applicationId, photoId, submissionState: "submitted" });
   render(<ApplicationForm opportunity={opportunity} />);
   await submitEligibleApplication(user);
 
-  const receipt = await screen.findByText(`Receipt: ${applicationId}`);
+  expect(screen.queryByText(`Receipt: ${applicationId}`)).not.toBeInTheDocument();
   const file = new File([new Uint8Array([1, 2, 3])], "requested.jpg", {
     type: "image/jpeg",
   });
@@ -143,9 +175,9 @@ it("preserves the private receipt when photo upload fails and supports retry", a
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Could not upload the photo. Try again.",
   );
-  expect(receipt).toBeVisible();
+  expect(screen.queryByText(`Receipt: ${applicationId}`)).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Upload photo" }));
-  expect(await screen.findByText("Photo uploaded privately.")).toBeVisible();
+  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
   expect(uploadApplicationPhotoMock).toHaveBeenCalledTimes(2);
   expect(uploadApplicationPhotoMock).toHaveBeenLastCalledWith({
     applicationId,
@@ -160,7 +192,13 @@ it("does not claim photo success until the storage upload completes", async () =
   // Production break: acknowledging the photo after token issuance hides a failed storage write.
   const user = userEvent.setup();
   submitApplicationMock.mockResolvedValue(successfulSubmission());
-  let resolveUpload: ((value: { photoId: string }) => void) | undefined;
+  let resolveUpload:
+    | ((value: {
+        applicationId: string;
+        photoId: string;
+        submissionState: "submitted";
+      }) => void)
+    | undefined;
   uploadApplicationPhotoMock.mockImplementation(
     () =>
       new Promise((resolve) => {
@@ -184,8 +222,8 @@ it("does not claim photo success until the storage upload completes", async () =
     screen.queryByText("Photo uploaded privately."),
   ).not.toBeInTheDocument();
 
-  resolveUpload?.({ photoId });
-  expect(await screen.findByText("Photo uploaded privately.")).toBeVisible();
+  resolveUpload?.({ applicationId, photoId, submissionState: "submitted" });
+  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
 });
 
 it("does not offer photo upload without a stored needs-review photo outcome", async () => {
@@ -193,6 +231,7 @@ it("does not offer photo upload without a stored needs-review photo outcome", as
   const user = userEvent.setup();
   submitApplicationMock.mockResolvedValue({
     ...successfulSubmission(),
+    submissionState: "submitted",
     evaluation: {
       ...successfulSubmission().evaluation,
       reviews: [],
@@ -215,6 +254,7 @@ it("does not treat a non-needs-review outcome as photo authority", async () => {
   const user = userEvent.setup();
   submitApplicationMock.mockResolvedValue({
     ...successfulSubmission(),
+    submissionState: "submitted",
     evaluation: {
       ...successfulSubmission().evaluation,
       reviews: [
@@ -240,6 +280,7 @@ it("does not use a photo outcome from a different stored ruleset", async () => {
   const user = userEvent.setup();
   submitApplicationMock.mockResolvedValue({
     ...successfulSubmission(),
+    submissionState: "submitted",
     evaluation: {
       ...successfulSubmission().evaluation,
       rulesetVersion: 2,
@@ -457,6 +498,7 @@ async function submitEligibleApplication(
 function successfulSubmission() {
   return {
     applicationId,
+    submissionState: "pending_photo" as const,
     evaluation: {
       rulesetId: "hair-promotion",
       rulesetVersion: 1,

@@ -42,6 +42,65 @@ registerTest(
   },
 );
 
+registerTest(
+  "rejects a non-photo application and recovers an already finalized photo",
+  async () => {
+    // Production break: a valid application tuple is not photo authority, while a lost success response must remain recoverable.
+    const nonPhoto = createFixture({ photoRequired: false });
+    assertEquals(
+      (
+        await issueGrant(
+          createPhotoUploadHandler(nonPhoto.dependencies, functionUrl),
+          validGrantRequest(),
+        )
+      ).status,
+      409,
+    );
+
+    const recovered = createFixture({
+      submissionState: "submitted",
+      completedPhotoId: photoId,
+    });
+    const response = await issueGrant(
+      createPhotoUploadHandler(recovered.dependencies, functionUrl),
+      validGrantRequest(),
+    );
+    assertEquals(response.status, 200);
+    assertEquals(await readJson(response), {
+      applicationId,
+      photoId,
+      submissionState: "submitted",
+    });
+    assertEquals(recovered.uploads.length, 0);
+  },
+);
+
+registerTest(
+  "rechecks photo-required pending state before accepting the PUT",
+  async () => {
+    // Production break: a signed token is not authority after the stored application stops being pending_photo.
+    for (const mutation of ["not-required", "submitted"] as const) {
+      const fixture = createFixture();
+      const handler = createPhotoUploadHandler(
+        fixture.dependencies,
+        functionUrl,
+      );
+      const grant = (await readJson(
+        await issueGrant(handler, validGrantRequest()),
+      )) as { uploadUrl: string; storagePath: string };
+      if (mutation === "not-required") {
+        fixture.setPhotoRequired(false);
+      } else {
+        fixture.setSubmissionState("submitted");
+      }
+
+      const response = await upload(handler, grant, bytes(3), "image/jpeg");
+      assertEquals(response.status, 409);
+      assertEquals(fixture.uploads.length, 0);
+    }
+  },
+);
+
 registerTest("rejects grant minting after the opportunity closes", async () => {
   // Production break: checking closure only during PUT still mints unnecessary upload authority for a closed job.
   const fixture = createFixture();
@@ -275,7 +334,7 @@ registerTest(
     const response = await upload(handler, grant, bytes(3), "image/jpeg");
 
     assertEquals(response.status, 201);
-    assertEquals(fixture.events, ["reserve", "storage", "metadata", "release"]);
+    assertEquals(fixture.events, ["reserve", "storage", "finalize"]);
     assertEquals(fixture.uploads[0]?.path, expectedPath());
     assertEquals(fixture.uploads[0]?.options, { upsert: false });
     assertEquals(fixture.metadata[0], {
@@ -285,6 +344,11 @@ registerTest(
       contentType: "image/jpeg",
       byteSize: 3,
       expiresAt: "2026-10-30T03:00:00.000Z",
+    });
+    assertEquals((await readJson(response)), {
+      applicationId,
+      photoId,
+      submissionState: "submitted",
     });
   },
 );
@@ -306,7 +370,7 @@ registerTest(
     assertEquals(fixture.events, [
       "reserve",
       "storage",
-      "metadata",
+      "finalize",
       "remove",
       "release",
     ]);
@@ -330,7 +394,7 @@ registerTest(
 
     assertEquals(response.status, 500);
     assertEquals(fixture.reservations, [expectedPath()]);
-    assertEquals(fixture.events, ["reserve", "storage", "metadata", "remove"]);
+    assertEquals(fixture.events, ["reserve", "storage", "finalize", "remove"]);
   },
 );
 
@@ -358,6 +422,9 @@ function createFixture(
     closesAtAfterStorage?: string;
     metadataFailure?: boolean;
     removalFailure?: boolean;
+    photoRequired?: boolean;
+    submissionState?: "pending_photo" | "submitted";
+    completedPhotoId?: string;
   } = {},
 ) {
   let currentTime = now;
@@ -369,6 +436,8 @@ function createFixture(
     closesAt: "2026-09-30T03:00:00.000Z",
     closedAt: null,
     status: "published",
+    photoRequired: options.photoRequired ?? true,
+    submissionState: options.submissionState ?? "pending_photo",
   };
   const uploads: Array<{
     path: string;
@@ -411,12 +480,22 @@ function createFixture(
         application.closesAt = options.closesAtAfterStorage;
       }
     },
-    async insertMetadata(value) {
-      events.push("metadata");
+    async finalizeUpload(value) {
+      events.push("finalize");
       if (options.metadataFailure) {
         throw new Error("metadata failed");
       }
       metadata.push(value);
+      application.submissionState = "submitted";
+      const index = reservations.indexOf(value.storagePath);
+      if (index >= 0) {
+        reservations.splice(index, 1);
+      }
+      return {
+        applicationId,
+        photoId: value.id,
+        submissionState: "submitted" as const,
+      };
     },
     async removeObject(path) {
       events.push("remove");
@@ -432,6 +511,19 @@ function createFixture(
       if (index >= 0) {
         reservations.splice(index, 1);
       }
+    },
+    async loadCompletedPhoto(input) {
+      if (
+        options.completedPhotoId !== undefined &&
+        input.applicationId === applicationId
+      ) {
+        return {
+          applicationId,
+          photoId: options.completedPhotoId,
+          submissionState: "submitted" as const,
+        };
+      }
+      return null;
     },
     reportError() {},
   };
@@ -452,6 +544,12 @@ function createFixture(
     },
     setNow(value: Date) {
       currentTime = value;
+    },
+    setPhotoRequired(value: boolean) {
+      application.photoRequired = value;
+    },
+    setSubmissionState(value: "pending_photo" | "submitted") {
+      application.submissionState = value;
     },
   };
 }

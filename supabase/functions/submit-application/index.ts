@@ -14,6 +14,12 @@ import {
   parseSubmitApplicationInput,
 } from "../../../src/features/applications/domain/application.ts";
 
+export type ApplicationSubmissionState = "pending_photo" | "submitted";
+
+export interface ApplicationSubmissionResult extends SubmitApplicationResult {
+  submissionState: ApplicationSubmissionState;
+}
+
 export interface OpportunityForSubmission {
   id: string;
   closesAt: string;
@@ -35,14 +41,16 @@ export interface ApplicationPersistenceCommand {
   rulesetVersion: number;
   rulesSnapshot: RuleDefinition[];
   evaluationSnapshot: EvaluationResult;
+  submissionState: ApplicationSubmissionState;
 }
 
-export type ApplicationPersistenceResult = SubmitApplicationResult;
+export type ApplicationPersistenceResult = ApplicationSubmissionResult;
 
 export interface ExistingApplicationAttempt {
   applicationId: string;
   submissionFingerprint: string;
   evaluation: EvaluationResult;
+  submissionState: ApplicationSubmissionState;
 }
 
 export interface SubmissionIntent {
@@ -81,6 +89,7 @@ interface ExistingAttemptRow {
   id: string;
   submission_fingerprint: string;
   evaluation_snapshot: unknown;
+  submission_state: string;
 }
 
 const corsHeaders = {
@@ -105,7 +114,7 @@ export class SubmissionError extends Error {
 export async function submitApplication(
   input: unknown,
   dependencies: SubmissionDependencies,
-): Promise<SubmitApplicationResult> {
+): Promise<ApplicationSubmissionResult> {
   const parsedInput = parseSubmitApplicationInput(input);
   const submissionIntent: SubmissionIntent = {
     opportunityId: parsedInput.opportunityId,
@@ -132,6 +141,7 @@ export async function submitApplication(
     return {
       applicationId: existingAttempt.applicationId,
       evaluation: existingAttempt.evaluation,
+      submissionState: existingAttempt.submissionState,
     };
   }
 
@@ -156,7 +166,11 @@ export async function submitApplication(
 
   const acceptedAnswerFields = new Set(
     opportunity.rules
-      .filter((rule) => rule.field !== "isAdult")
+      .filter(
+        (rule) =>
+          rule.field !== "isAdult" &&
+          !rule.field.toLowerCase().includes("photo"),
+      )
       .map((rule) => rule.field),
   );
   if (
@@ -188,6 +202,10 @@ export async function submitApplication(
 
   const rulesSnapshot = structuredClone(opportunity.rules);
   const evaluationSnapshot = structuredClone(evaluation);
+  const submissionState = deriveSubmissionState(
+    rulesSnapshot,
+    evaluationSnapshot,
+  );
   const persistencePayload = {
     opportunityId: opportunity.id,
     submissionAttemptId: parsedInput.submissionAttemptId,
@@ -199,6 +217,7 @@ export async function submitApplication(
     rulesetVersion: opportunity.rulesetVersion,
     rulesSnapshot,
     evaluationSnapshot,
+    submissionState,
   };
   const persistenceResult = await dependencies.persistApplication({
     ...persistencePayload,
@@ -206,6 +225,28 @@ export async function submitApplication(
   });
 
   return persistenceResult;
+}
+
+export function deriveSubmissionState(
+  rules: RuleDefinition[],
+  evaluation: EvaluationResult,
+): ApplicationSubmissionState {
+  const requestedPhotoRuleIds = new Set(
+    rules
+      .filter(
+        (rule) =>
+          rule.effect === "needs_review" &&
+          rule.field.toLowerCase().includes("photo"),
+      )
+      .map((rule) => rule.id),
+  );
+  return evaluation.reviews.some(
+    (outcome) =>
+      outcome.effect === "needs_review" &&
+      requestedPhotoRuleIds.has(outcome.ruleId),
+  )
+    ? "pending_photo"
+    : "submitted";
 }
 
 export async function createSubmissionFingerprint(
@@ -297,7 +338,9 @@ export function createSupabaseDependencies(
     async loadExistingAttempt(opportunityId, submissionAttemptId) {
       const { data, error } = await client
         .from("applications")
-        .select("id, submission_fingerprint, evaluation_snapshot")
+        .select(
+          "id, submission_fingerprint, evaluation_snapshot, submission_state",
+        )
         .eq("opportunity_id", opportunityId)
         .eq("submission_attempt_id", submissionAttemptId)
         .maybeSingle<ExistingAttemptRow>();
@@ -311,11 +354,16 @@ export function createSupabaseDependencies(
       if (!isEvaluationResult(data.evaluation_snapshot)) {
         throw new Error("Stored application evaluation is invalid.");
       }
+      const submissionState = parseSubmissionState(data.submission_state);
+      if (submissionState === undefined) {
+        throw new Error("Stored application submission state is invalid.");
+      }
 
       return {
         applicationId: data.id,
         submissionFingerprint: data.submission_fingerprint,
         evaluation: data.evaluation_snapshot,
+        submissionState,
       };
     },
     async loadOpportunity(opportunityId) {
@@ -376,10 +424,38 @@ export function createSupabaseDependencies(
       ) {
         throw new Error("Application persistence returned an invalid result.");
       }
+      const persistedResult = data as SubmitApplicationResult;
+      const { data: persistedApplication, error: stateError } = await client
+        .from("applications")
+        .select("submission_state")
+        .eq("id", persistedResult.applicationId)
+        .maybeSingle<{ submission_state: string }>();
+      if (stateError !== null || persistedApplication === null) {
+        throw new Error(
+          `Failed to load persisted application state: ${stateError?.message ?? "application not found"}`,
+        );
+      }
+      const submissionState = parseSubmissionState(
+        persistedApplication.submission_state,
+      );
+      if (
+        submissionState === undefined ||
+        submissionState !== command.submissionState
+      ) {
+        throw new Error("Persisted application submission state is invalid.");
+      }
 
-      return data as ApplicationPersistenceResult;
+      return { ...persistedResult, submissionState };
     },
   };
+}
+
+function parseSubmissionState(
+  value: unknown,
+): ApplicationSubmissionState | undefined {
+  return value === "pending_photo" || value === "submitted"
+    ? value
+    : undefined;
 }
 
 export function createSubmitApplicationHandler(

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(39);
+select plan(50);
 
 select is(
   (select public from storage.buckets where id = 'application-photos'),
@@ -603,6 +603,95 @@ select ok(
   'authenticated role cannot execute the submission transaction'
 );
 
+select ok(
+  not has_function_privilege(
+    'anon',
+    'public.finalize_application_photo(uuid,uuid,uuid,uuid,text,text,bigint)',
+    'EXECUTE'
+  ),
+  'anonymous role cannot finalize an application photo'
+);
+
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.finalize_application_photo(uuid,uuid,uuid,uuid,text,text,bigint)',
+    'EXECUTE'
+  ),
+  'authenticated role cannot finalize an application photo'
+);
+
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.finalize_application_photo(uuid,uuid,uuid,uuid,text,text,bigint)',
+    'EXECUTE'
+  ),
+  'service role can finalize an application photo'
+);
+
+insert into public.opportunities (
+  id,
+  recruiter_id,
+  category,
+  title,
+  starts_at,
+  closes_at,
+  venue_district,
+  expected_minutes,
+  benefit,
+  status,
+  ruleset_id,
+  ruleset_version,
+  rules_snapshot
+) values (
+  '00000000-0000-0000-0000-000000000004',
+  '10000000-0000-4000-8000-000000000001',
+  'hair_promotion',
+  'Photo opportunity',
+  '2099-09-23T03:00:00Z',
+  '2099-09-22T03:00:00Z',
+  'Gangnam-gu',
+  120,
+  '{"type":"procedure","description":"Hair service"}',
+  'published',
+  'hair-photo',
+  1,
+  '[{"id":"photo-required","field":"requestedPhoto","operator":"equals","expected":true,"effect":"needs_review","reason":"Upload the requested job-specific photo."}]'
+);
+
+create temporary table pending_photo_results (result jsonb not null);
+insert into pending_photo_results (result)
+select public.submit_application_transaction(
+  '00000000-0000-0000-0000-000000000004',
+  '00000000-0000-4000-8000-000000000044',
+  repeat('4', 64),
+  'Pending photo applicant',
+  '010-0000-0044',
+  '2000-01-01',
+  '{"isAdult":true}',
+  true,
+  false,
+  'hair-photo',
+  1,
+  '[{"id":"photo-required","field":"requestedPhoto","operator":"equals","expected":true,"effect":"needs_review","reason":"Upload the requested job-specific photo."}]',
+  '{"rulesetId":"hair-photo","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[{"ruleId":"photo-required","reason":"Upload the requested job-specific photo.","effect":"needs_review","input":null}],"reminders":[]}'
+);
+
+create temporary table pending_photo_ids as
+select (result ->> 'applicationId')::uuid as id
+from pending_photo_results;
+
+select is(
+  (
+    select submission_state
+    from public.applications
+    join pending_photo_ids using (id)
+  ),
+  'pending_photo',
+  'submission transaction derives pending_photo from stored rule evidence'
+);
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -628,6 +717,28 @@ select results_eq(
   $$,
   $$ values (0::bigint) $$,
   'recruiter cannot read another recruiter application'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.applications
+    where opportunity_id = '00000000-0000-0000-0000-000000000004'
+  ),
+  0::bigint,
+  'recruiter cannot read a pending photo application'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.application_answers
+    join public.applications
+      on applications.id = application_answers.application_id
+    where applications.opportunity_id = '00000000-0000-0000-0000-000000000004'
+  ),
+  0::bigint,
+  'recruiter cannot read pending photo application answers'
 );
 
 select is(
@@ -809,6 +920,86 @@ select results_eq(
   $$,
   $$ select null::uuid where false $$,
   'authenticated recruiters cannot delete owned opportunities'
+);
+
+reset role;
+
+insert into public.application_photo_upload_reservations (
+  id,
+  application_id,
+  storage_path,
+  content_type,
+  byte_size
+)
+select
+  '00000000-0000-4000-8000-000000000044',
+  id,
+  'opportunity/00000000-0000-0000-0000-000000000004/application/' || id || '/00000000-0000-4000-8000-000000000044',
+  'image/jpeg',
+  3
+from pending_photo_ids;
+
+select is(
+  public.finalize_application_photo(
+    '00000000-0000-4000-8000-000000000044',
+    (select id from pending_photo_ids),
+    '00000000-0000-0000-0000-000000000004',
+    '00000000-0000-4000-8000-000000000044',
+    'opportunity/00000000-0000-0000-0000-000000000004/application/' || (select id from pending_photo_ids) || '/00000000-0000-4000-8000-000000000044',
+    'image/jpeg',
+    3
+  ),
+  jsonb_build_object(
+    'applicationId', (select id from pending_photo_ids),
+    'photoId', '00000000-0000-4000-8000-000000000044'::uuid,
+    'submissionState', 'submitted'
+  ),
+  'photo finalization returns the submitted application receipt'
+);
+
+select is(
+  (select submission_state from public.applications join pending_photo_ids using (id)),
+  'submitted',
+  'photo finalization advances pending_photo to submitted'
+);
+
+select ok(
+  (select count(*) = 1 from public.application_photos where id = '00000000-0000-4000-8000-000000000044')
+  and (select count(*) = 0 from public.application_photo_upload_reservations where id = '00000000-0000-4000-8000-000000000044'),
+  'photo metadata insertion and reservation release commit atomically'
+);
+
+update public.opportunities
+set
+  status = 'closed',
+  closed_at = '2099-08-01T03:00:00Z'
+where id = '00000000-0000-0000-0000-000000000004';
+
+select is(
+  (
+    select expires_at
+    from public.application_photos
+    where id = '00000000-0000-4000-8000-000000000044'
+  ),
+  '2099-08-31T03:00:00Z'::timestamptz,
+  'early opportunity closure resets photo retention to actual closure plus 30 days'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.applications
+    where opportunity_id = '00000000-0000-0000-0000-000000000004'
+  ),
+  1::bigint,
+  'recruiter can read the application only after photo finalization'
 );
 
 reset role;

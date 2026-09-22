@@ -93,6 +93,7 @@ function createDependencies(
         options.persistenceResult ?? {
           applicationId,
           evaluation: command.evaluationSnapshot,
+          submissionState: command.submissionState,
         },
       );
     },
@@ -242,6 +243,40 @@ registerTest("rejects a client-supplied isAdult answer", async () => {
   assertEquals(persisted.length, 0);
 });
 
+registerTest(
+  "persists a photo review as pending_photo and rejects client photo claims",
+  async () => {
+    // Production break: a client-provided photo answer can bypass the server-owned pending photo state.
+    const opportunity = createOpportunity();
+    opportunity.rules.push({
+      id: "photo-required",
+      field: "requestedPhoto",
+      operator: "equals",
+      expected: true,
+      effect: "needs_review",
+      reason: "Upload the requested job-specific photo.",
+    });
+    const test = createDependencies(opportunity);
+
+    const result = await submitApplication(createInput(), test.dependencies);
+
+    assertEquals(result.submissionState, "pending_photo");
+    assertEquals(test.persisted[0]?.submissionState, "pending_photo");
+    const error = await expectSubmissionError(
+      () =>
+        submitApplication(
+          createInput({
+            submissionAttemptId: "00000000-0000-4000-8000-000000000202",
+            answers: { isAvailable: true, requestedPhoto: true },
+          }),
+          test.dependencies,
+        ),
+      "Answers contain fields not requested by this opportunity.",
+    );
+    assertEquals(error.status, 400);
+  },
+);
+
 registerTest("rejects an oversized applicant display name", async () => {
   // Production break: accepting unbounded personal-data strings into the submission payload.
   const { dependencies, persisted } = createDependencies();
@@ -298,8 +333,23 @@ registerTest("rejects an incomplete client success response", () => {
         reviews: [],
         reminders: [],
       },
+      submissionState: "submitted",
     }),
     true,
+  );
+  assertEquals(
+    isSubmitApplicationResult({
+      applicationId,
+      evaluation: {
+        rulesetId: "hair-promotion",
+        rulesetVersion: 1,
+        eligible: true,
+        failures: [],
+        reviews: [],
+        reminders: [],
+      },
+    }),
+    false,
   );
 });
 
@@ -509,12 +559,20 @@ registerTest(
       ],
     };
     const test = createDependencies(createOpportunity(), now, {
-      persistenceResult: { applicationId, evaluation: storedEvaluation },
+      persistenceResult: {
+        applicationId,
+        evaluation: storedEvaluation,
+        submissionState: "submitted",
+      },
     });
 
     const result = await submitApplication(createInput(), test.dependencies);
 
-    assertEquals(result, { applicationId, evaluation: storedEvaluation });
+    assertEquals(result, {
+      applicationId,
+      evaluation: storedEvaluation,
+      submissionState: "submitted",
+    });
     assertEquals(test.persisted.length, 1);
   },
 );
@@ -571,6 +629,7 @@ function existingAttempt(
     applicationId,
     submissionFingerprint: command.submissionFingerprint,
     evaluation,
+    submissionState: command.submissionState,
   };
 }
 

@@ -7,6 +7,12 @@ import type {
 } from "../domain/application";
 import { isEvaluationResult } from "../domain/application";
 
+export type ApplicationSubmissionState = "pending_photo" | "submitted";
+
+export interface ApplicationSubmissionResult extends SubmitApplicationResult {
+  submissionState: ApplicationSubmissionState;
+}
+
 export class ApplicationSubmissionError extends Error {
   constructor(
     message: string,
@@ -19,7 +25,7 @@ export class ApplicationSubmissionError extends Error {
 
 export async function submitApplication(
   input: SubmitApplicationInput,
-): Promise<SubmitApplicationResult> {
+): Promise<ApplicationSubmissionResult> {
   const { data, error } = await getSupabaseClient().functions.invoke(
     "submit-application",
     { body: input },
@@ -81,14 +87,16 @@ export async function parseApplicationSubmissionHttpError(
 
 export function isSubmitApplicationResult(
   value: unknown,
-): value is SubmitApplicationResult {
+): value is ApplicationSubmissionResult {
   if (typeof value !== "object" || value === null) {
     return false;
   }
 
-  const result = value as Partial<SubmitApplicationResult>;
+  const result = value as Partial<ApplicationSubmissionResult>;
   return (
     typeof result.applicationId === "string" &&
-    isEvaluationResult(result.evaluation)
+    isEvaluationResult(result.evaluation) &&
+    (result.submissionState === "pending_photo" ||
+      result.submissionState === "submitted")
   );
 }

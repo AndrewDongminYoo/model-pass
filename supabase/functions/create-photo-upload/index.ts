@@ -75,6 +75,10 @@ export interface PhotoUploadDependencies {
   loadCompletedPhoto: (
     input: PhotoApplicationLookup,
   ) => Promise<PhotoUploadResult | null>;
+  loadExactFinalizedUpload: (
+    metadata: PhotoMetadata,
+    tuple: PhotoApplicationLookup,
+  ) => Promise<PhotoUploadResult | null>;
   reportError: (message: string, error: unknown) => void;
 }
 
@@ -101,6 +105,9 @@ interface ApplicationRow {
 interface PhotoRow {
   id: string;
   application_id: string;
+  storage_path: string;
+  content_type: string;
+  byte_size: number;
 }
 
 interface OpportunityRow {
@@ -259,6 +266,7 @@ export function createPhotoUploadHandler(
           throw error;
         }
 
+        let metadata: PhotoMetadata;
         try {
           const currentApplication = await dependencies.loadApplication(claims);
           if (currentApplication === null) {
@@ -266,29 +274,41 @@ export function createPhotoUploadHandler(
           }
           assertPhotoRequired(currentApplication);
           assertUploadWindowOpen(currentApplication, dependencies.now());
-          const retentionExpiresAt = retentionFor(currentApplication);
-          const result = await dependencies.finalizeUpload(
-            {
-              ...reservation,
-              expiresAt: retentionExpiresAt,
-            },
-            claims,
-          );
+          metadata = {
+            ...reservation,
+            expiresAt: retentionFor(currentApplication),
+          };
+        } catch (preFinalizationError) {
+          await compensateUploadFailure(dependencies, claims.storagePath);
+          throw preFinalizationError;
+        }
+
+        try {
+          const result = await dependencies.finalizeUpload(metadata, claims);
           return jsonResponse(result, 201);
-        } catch (error) {
+        } catch (finalizationError) {
+          let finalized: PhotoUploadResult | null;
           try {
-            await dependencies.removeObject(claims.storagePath);
-            await releaseReservationAfterFailure(
-              dependencies,
-              claims.storagePath,
+            finalized = await dependencies.loadExactFinalizedUpload(
+              metadata,
+              claims,
             );
-          } catch (compensationError) {
+          } catch (verificationError) {
             dependencies.reportError(
-              "Photo upload compensation failed.",
-              compensationError,
+              "Photo finalization status could not be verified.",
+              { finalizationError, verificationError },
+            );
+            throw new PhotoUploadError(
+              "Unable to verify the photo upload result.",
+              500,
             );
           }
-          throw error;
+          if (finalized !== null) {
+            return jsonResponse(finalized, 201);
+          }
+
+          await compensateUploadFailure(dependencies, claims.storagePath);
+          throw finalizationError;
         }
       }
 
@@ -530,6 +550,18 @@ async function releaseReservationAfterFailure(
   }
 }
 
+async function compensateUploadFailure(
+  dependencies: PhotoUploadDependencies,
+  storagePath: string,
+): Promise<void> {
+  try {
+    await dependencies.removeObject(storagePath);
+    await releaseReservationAfterFailure(dependencies, storagePath);
+  } catch (error) {
+    dependencies.reportError("Photo upload compensation failed.", error);
+  }
+}
+
 async function hmac(payload: string, secret: string): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -734,7 +766,7 @@ export function createSupabaseDependencies(
     async loadCompletedPhoto(input) {
       const { data, error } = await client
         .from("application_photos")
-        .select("id, application_id")
+        .select("id, application_id, storage_path, content_type, byte_size")
         .eq("application_id", input.applicationId)
         .order("created_at", { ascending: true })
         .limit(1)
@@ -749,6 +781,52 @@ export function createSupabaseDependencies(
             photoId: data.id,
             submissionState: "submitted",
           };
+    },
+    async loadExactFinalizedUpload(metadata, tuple) {
+      const { data, error } = await client
+        .from("application_photos")
+        .select("id, application_id, storage_path, content_type, byte_size")
+        .eq("id", metadata.id)
+        .eq("application_id", metadata.applicationId)
+        .eq("storage_path", metadata.storagePath)
+        .eq("content_type", metadata.contentType)
+        .eq("byte_size", metadata.byteSize)
+        .maybeSingle<PhotoRow>();
+      if (error !== null) {
+        throw new Error(
+          `Failed to verify finalized photo metadata: ${error.message}`,
+        );
+      }
+      if (data === null) {
+        return null;
+      }
+
+      const { data: application, error: applicationError } = await client
+        .from("applications")
+        .select("id, submission_state")
+        .eq("id", tuple.applicationId)
+        .eq("opportunity_id", tuple.opportunityId)
+        .eq("submission_attempt_id", tuple.submissionAttemptId)
+        .maybeSingle<{ id: string; submission_state: string }>();
+      if (applicationError !== null) {
+        throw new Error(
+          `Failed to verify finalized application state: ${applicationError.message}`,
+        );
+      }
+      if (
+        application === null ||
+        application.id !== data.application_id ||
+        application.submission_state !== "submitted"
+      ) {
+        throw new Error(
+          "Finalized photo metadata has no matching submitted application.",
+        );
+      }
+      return {
+        applicationId: data.application_id,
+        photoId: data.id,
+        submissionState: "submitted",
+      };
     },
     reportError(message, error) {
       console.error(message, error);

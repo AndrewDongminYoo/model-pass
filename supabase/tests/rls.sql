@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(50);
+select plan(52);
 
 select is(
   (select public from storage.buckets where id = 'application-photos'),
@@ -983,6 +983,34 @@ select is(
   ),
   '2099-08-31T03:00:00Z'::timestamptz,
   'early opportunity closure resets photo retention to actual closure plus 30 days'
+);
+
+update public.opportunities
+set closed_at = '2099-09-01T03:00:00Z'
+where id = '00000000-0000-0000-0000-000000000004';
+
+select is(
+  (
+    select expires_at
+    from public.application_photos
+    where id = '00000000-0000-4000-8000-000000000044'
+  ),
+  '2099-08-31T03:00:00Z'::timestamptz,
+  'a later closed_at cannot extend existing photo retention'
+);
+
+update public.opportunities
+set closed_at = '2099-07-01T03:00:00Z'
+where id = '00000000-0000-0000-0000-000000000004';
+
+select is(
+  (
+    select expires_at
+    from public.application_photos
+    where id = '00000000-0000-4000-8000-000000000044'
+  ),
+  '2099-07-31T03:00:00Z'::timestamptz,
+  'an earlier closed_at shortens existing photo retention'
 );
 
 set local role authenticated;

@@ -38,8 +38,25 @@ const initialContactValues: ContactValues = {
   futureOpportunityConsent: false,
 };
 
+interface PendingPhotoCapability {
+  applicationId: string;
+  submissionAttemptId: string;
+  rulesetId: string;
+  rulesetVersion: number;
+  expiresAt: string;
+}
+
+const pendingPhotoStoragePrefix = "model-pass:pending-photo:";
+const uuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function ApplicationForm({ opportunity }: ApplicationFormProps) {
-  const [submissionAttemptId] = useState(() => crypto.randomUUID());
+  const [restoredPendingPhoto] = useState(() =>
+    loadPendingPhotoCapability(opportunity),
+  );
+  const [submissionAttemptId] = useState(
+    () => restoredPendingPhoto?.submissionAttemptId ?? crypto.randomUUID(),
+  );
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [evaluation, setEvaluation] = useState<EvaluationResult>();
   const [showApplication, setShowApplication] = useState(false);
@@ -55,8 +72,11 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   const [photoPending, setPhotoPending] = useState(false);
   const [pendingPhotoApplication, setPendingPhotoApplication] = useState<{
     applicationId: string;
-    evaluation: EvaluationResult;
-  }>();
+  } | undefined>(() =>
+    restoredPendingPhoto === undefined
+      ? undefined
+      : { applicationId: restoredPendingPhoto.applicationId },
+  );
   const submittingRef = useRef(false);
   const photoUploadingRef = useRef(false);
 
@@ -72,7 +92,7 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
 
   if (
     pendingPhotoApplication !== undefined &&
-    hasRequestedPhotoOutcome(opportunity, pendingPhotoApplication.evaluation)
+    opportunityRequestsPhoto(opportunity)
   ) {
     return (
       <section aria-labelledby="photo-required-heading">
@@ -120,6 +140,7 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
       if (result.applicationId !== applicationId) {
         throw new Error("The photo upload completed for another application.");
       }
+      clearPendingPhotoCapability(opportunity.id);
       setReceiptId(result.applicationId);
       setPendingPhotoApplication(undefined);
     } catch {
@@ -191,9 +212,16 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         }
         setPendingPhotoApplication({
           applicationId: result.applicationId,
-          evaluation: result.evaluation,
+        });
+        savePendingPhotoCapability(opportunity, {
+          applicationId: result.applicationId,
+          submissionAttemptId,
+          rulesetId: opportunity.rulesetId,
+          rulesetVersion: opportunity.rulesetVersion,
+          expiresAt: opportunity.closesAt,
         });
       } else {
+        clearPendingPhotoCapability(opportunity.id);
         setReceiptId(result.applicationId);
       }
     } catch (error) {
@@ -310,6 +338,102 @@ function hasRequestedPhotoOutcome(
       outcome.effect === "needs_review" &&
       requestedPhotoRuleIds.has(outcome.ruleId),
   );
+}
+
+function opportunityRequestsPhoto(opportunity: PublicOpportunity): boolean {
+  return opportunity.rules.some(
+    (rule) =>
+      rule.effect === "needs_review" &&
+      rule.field.toLowerCase().includes("photo"),
+  );
+}
+
+function pendingPhotoStorageKey(opportunityId: string): string {
+  return `${pendingPhotoStoragePrefix}${opportunityId}`;
+}
+
+function loadPendingPhotoCapability(
+  opportunity: PublicOpportunity,
+): PendingPhotoCapability | undefined {
+  const key = pendingPhotoStorageKey(opportunity.id);
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) {
+      return undefined;
+    }
+    const parsed: unknown = JSON.parse(stored);
+    if (!isValidPendingPhotoCapability(parsed, opportunity)) {
+      localStorage.removeItem(key);
+      return undefined;
+    }
+    return parsed;
+  } catch {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Browser storage is best-effort; the server remains authoritative.
+    }
+    return undefined;
+  }
+}
+
+function isValidPendingPhotoCapability(
+  value: unknown,
+  opportunity: PublicOpportunity,
+): value is PendingPhotoCapability {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const capability = value as Partial<PendingPhotoCapability>;
+  const keys = Object.keys(value).sort();
+  const expectedKeys = [
+    "applicationId",
+    "expiresAt",
+    "rulesetId",
+    "rulesetVersion",
+    "submissionAttemptId",
+  ];
+  const expiresAt =
+    typeof capability.expiresAt === "string"
+      ? Date.parse(capability.expiresAt)
+      : Number.NaN;
+  const closesAt = Date.parse(opportunity.closesAt);
+  return (
+    JSON.stringify(keys) === JSON.stringify(expectedKeys) &&
+    typeof capability.applicationId === "string" &&
+    uuidPattern.test(capability.applicationId) &&
+    typeof capability.submissionAttemptId === "string" &&
+    uuidPattern.test(capability.submissionAttemptId) &&
+    capability.rulesetId === opportunity.rulesetId &&
+    capability.rulesetVersion === opportunity.rulesetVersion &&
+    Number.isFinite(expiresAt) &&
+    Number.isFinite(closesAt) &&
+    expiresAt > Date.now() &&
+    expiresAt <= closesAt &&
+    opportunityRequestsPhoto(opportunity)
+  );
+}
+
+function savePendingPhotoCapability(
+  opportunity: PublicOpportunity,
+  capability: PendingPhotoCapability,
+): void {
+  try {
+    localStorage.setItem(
+      pendingPhotoStorageKey(opportunity.id),
+      JSON.stringify(capability),
+    );
+  } catch {
+    // Browser storage is best-effort; the in-memory upload step remains usable.
+  }
+}
+
+function clearPendingPhotoCapability(opportunityId: string): void {
+  try {
+    localStorage.removeItem(pendingPhotoStorageKey(opportunityId));
+  } catch {
+    // Browser storage is best-effort; the server remains authoritative.
+  }
 }
 
 interface TextFieldProps {

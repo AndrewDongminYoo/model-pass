@@ -12,9 +12,14 @@ import {
 import { ApplyPage } from "../routes/ApplyPage";
 import { ApplicationForm } from "./ApplicationForm";
 
-const { getPublicOpportunityMock, submitApplicationMock } = vi.hoisted(() => ({
+const {
+  getPublicOpportunityMock,
+  submitApplicationMock,
+  uploadApplicationPhotoMock,
+} = vi.hoisted(() => ({
   getPublicOpportunityMock: vi.fn(),
   submitApplicationMock: vi.fn(),
+  uploadApplicationPhotoMock: vi.fn(),
 }));
 
 vi.mock("../api/get-public-opportunity", async (importOriginal) => {
@@ -29,8 +34,16 @@ vi.mock("../api/submit-application", async (importOriginal) => {
   return { ...original, submitApplication: submitApplicationMock };
 });
 
+vi.mock("../api/application-photos", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../api/application-photos")>();
+  return { ...original, uploadApplicationPhoto: uploadApplicationPhotoMock };
+});
+
 const opportunityId = "00000000-0000-4000-8000-000000000001";
 const applicationId = "00000000-0000-4000-8000-000000000101";
+const pendingAttemptId = "00000000-0000-4000-8000-000000000201";
+const pendingStorageKey = `model-pass:pending-photo:${opportunityId}`;
 const makeupOpportunity: PublicOpportunity = {
   id: opportunityId,
   category: "makeup_certification",
@@ -73,10 +86,139 @@ const makeupOpportunity: PublicOpportunity = {
     },
   ],
 };
+const photoOpportunity: PublicOpportunity = {
+  ...makeupOpportunity,
+  category: "hair_promotion",
+  title: "Hair promotion exam",
+  rulesetId: "hair-photo",
+  rules: [
+    makeupOpportunity.rules[0],
+    makeupOpportunity.rules[1],
+    {
+      id: "photo-required",
+      field: "requestedPhoto",
+      operator: "equals",
+      expected: true,
+      effect: "needs_review",
+      reason: "Upload the requested job-specific photo.",
+    },
+  ],
+};
 
 afterEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   window.history.replaceState({}, "", "/");
+});
+
+it("restores a valid opportunity-scoped pending photo capability", async () => {
+  // Production break: a reload after contact submission can strand a private draft before its required photo is supplied.
+  localStorage.setItem(
+    pendingStorageKey,
+    JSON.stringify(pendingPhotoCapability()),
+  );
+  render(<ApplicationForm opportunity={photoOpportunity} />);
+
+  expect(
+    screen.getByRole("heading", { name: "Photo required to finish" }),
+  ).toBeVisible();
+  expect(screen.queryByLabelText("Display name")).not.toBeInTheDocument();
+
+  const file = new File([new Uint8Array([1])], "requested.jpg", {
+    type: "image/jpeg",
+  });
+  uploadApplicationPhotoMock.mockResolvedValue({
+    applicationId,
+    photoId: "00000000-0000-4000-8000-000000000301",
+    submissionState: "submitted",
+  });
+  const user = userEvent.setup();
+  await user.upload(screen.getByLabelText("Job-specific photo"), file);
+  await user.click(screen.getByRole("button", { name: "Upload photo" }));
+
+  expect(uploadApplicationPhotoMock).toHaveBeenCalledWith({
+    applicationId,
+    opportunityId,
+    submissionAttemptId: pendingAttemptId,
+    file,
+  });
+});
+
+it("rejects and clears expired or ruleset-mismatched pending capabilities", () => {
+  // Production break: stale local capability data must not render a photo upload surface for another ruleset or after closure.
+  for (const stored of [
+    { ...pendingPhotoCapability(), expiresAt: "2020-01-01T00:00:00.000Z" },
+    { ...pendingPhotoCapability(), rulesetVersion: 2 },
+  ]) {
+    localStorage.setItem(pendingStorageKey, JSON.stringify(stored));
+    const view = render(<ApplicationForm opportunity={photoOpportunity} />);
+    expect(
+      screen.queryByRole("heading", { name: "Photo required to finish" }),
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem(pendingStorageKey)).toBeNull();
+    view.unmount();
+  }
+});
+
+it("persists only the minimal pending photo capability and clears it on completion", async () => {
+  // Production break: persisting application form state can place contact data, answers, consent, or photo bytes in localStorage.
+  const user = userEvent.setup();
+  submitApplicationMock.mockResolvedValue(pendingPhotoSubmission());
+  uploadApplicationPhotoMock.mockResolvedValue({
+    applicationId,
+    photoId: "00000000-0000-4000-8000-000000000301",
+    submissionState: "submitted",
+  });
+  render(<ApplicationForm opportunity={photoOpportunity} />);
+  await answerBooleanQuestion(user, "Is adult", true);
+  await answerBooleanQuestion(user, "Is available", true);
+  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
+  await user.click(
+    screen.getByRole("button", { name: "Continue to application" }),
+  );
+  await completeContactFields(user);
+  await user.click(screen.getByLabelText("Consent to this application"));
+  await user.click(screen.getByRole("button", { name: "Submit application" }));
+
+  const stored = localStorage.getItem(pendingStorageKey);
+  expect(stored).not.toBeNull();
+  expect(JSON.parse(stored ?? "{}")).toEqual({
+    applicationId,
+    submissionAttemptId:
+      submitApplicationMock.mock.calls[0]?.[0].submissionAttemptId,
+    rulesetId: photoOpportunity.rulesetId,
+    rulesetVersion: photoOpportunity.rulesetVersion,
+    expiresAt: photoOpportunity.closesAt,
+  });
+  expect(stored).not.toContain("Applicant");
+  expect(stored).not.toContain("010-1234-5678");
+  expect(stored).not.toContain("2000-09-22");
+  expect(stored).not.toContain("isAvailable");
+  expect(stored).not.toContain("Consent");
+
+  await user.upload(
+    screen.getByLabelText("Job-specific photo"),
+    new File([new Uint8Array([1])], "requested.jpg", { type: "image/jpeg" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Upload photo" }));
+  expect(
+    await screen.findByRole("heading", { name: "Application received" }),
+  ).toBeVisible();
+  expect(localStorage.getItem(pendingStorageKey)).toBeNull();
+});
+
+it("clears capability data after a non-photo submission", async () => {
+  // Production break: unrelated successful applications must not leave stale photo authority in browser storage.
+  const user = userEvent.setup();
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+  localStorage.setItem(pendingStorageKey, JSON.stringify(pendingPhotoCapability()));
+  submitApplicationMock.mockResolvedValue(successfulSubmission());
+  await reachApplicationForm(user);
+  await completeContactFields(user);
+  await user.click(screen.getByLabelText("Consent to this application"));
+  await user.click(screen.getByRole("button", { name: "Submit application" }));
+
+  expect(localStorage.getItem(pendingStorageKey)).toBeNull();
 });
 
 it("explains the exact deterministic hard failure without requesting a photo", async () => {
@@ -523,6 +665,38 @@ function successfulSubmission() {
       reviews: [],
       reminders: [],
     },
+  };
+}
+
+function pendingPhotoSubmission() {
+  return {
+    applicationId,
+    submissionState: "pending_photo" as const,
+    evaluation: {
+      rulesetId: photoOpportunity.rulesetId,
+      rulesetVersion: photoOpportunity.rulesetVersion,
+      eligible: true,
+      failures: [],
+      reviews: [
+        {
+          ruleId: "photo-required",
+          reason: "Upload the requested job-specific photo.",
+          effect: "needs_review" as const,
+          input: null,
+        },
+      ],
+      reminders: [],
+    },
+  };
+}
+
+function pendingPhotoCapability() {
+  return {
+    applicationId,
+    submissionAttemptId: pendingAttemptId,
+    rulesetId: photoOpportunity.rulesetId,
+    rulesetVersion: photoOpportunity.rulesetVersion,
+    expiresAt: photoOpportunity.closesAt,
   };
 }
 

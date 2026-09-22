@@ -371,9 +371,56 @@ registerTest(
       "reserve",
       "storage",
       "finalize",
+      "verify",
       "remove",
       "release",
     ]);
+  },
+);
+
+registerTest(
+  "returns the exact committed upload when finalization response is lost",
+  async () => {
+    // Production break: compensating after a committed RPC response loss deletes the storage object referenced by submitted metadata.
+    const fixture = createFixture({ finalizationCommittedResponseLoss: true });
+    const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+    const grant = (await readJson(
+      await issueGrant(handler, validGrantRequest()),
+    )) as { uploadUrl: string; storagePath: string };
+
+    const response = await upload(handler, grant, bytes(3), "image/jpeg");
+
+    assertEquals(response.status, 201);
+    assertEquals(await readJson(response), {
+      applicationId,
+      photoId,
+      submissionState: "submitted",
+    });
+    assertEquals(fixture.events, ["reserve", "storage", "finalize", "verify"]);
+    assertEquals(fixture.removals, []);
+    assertEquals(fixture.reservations, []);
+  },
+);
+
+registerTest(
+  "retains storage and reservation when finalization status is ambiguous",
+  async () => {
+    // Production break: deleting storage when the exact commit check errors can break a committed submitted application.
+    const fixture = createFixture({
+      metadataFailure: true,
+      finalizationVerificationFailure: true,
+    });
+    const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+    const grant = (await readJson(
+      await issueGrant(handler, validGrantRequest()),
+    )) as { uploadUrl: string; storagePath: string };
+
+    const response = await upload(handler, grant, bytes(3), "image/jpeg");
+
+    assertEquals(response.status, 500);
+    assertEquals(fixture.events, ["reserve", "storage", "finalize", "verify"]);
+    assertEquals(fixture.removals, []);
+    assertEquals(fixture.reservations, [expectedPath()]);
   },
 );
 
@@ -394,7 +441,13 @@ registerTest(
 
     assertEquals(response.status, 500);
     assertEquals(fixture.reservations, [expectedPath()]);
-    assertEquals(fixture.events, ["reserve", "storage", "finalize", "remove"]);
+    assertEquals(fixture.events, [
+      "reserve",
+      "storage",
+      "finalize",
+      "verify",
+      "remove",
+    ]);
   },
 );
 
@@ -425,6 +478,8 @@ function createFixture(
     photoRequired?: boolean;
     submissionState?: "pending_photo" | "submitted";
     completedPhotoId?: string;
+    finalizationCommittedResponseLoss?: boolean;
+    finalizationVerificationFailure?: boolean;
   } = {},
 ) {
   let currentTime = now;
@@ -491,6 +546,9 @@ function createFixture(
       if (index >= 0) {
         reservations.splice(index, 1);
       }
+      if (options.finalizationCommittedResponseLoss) {
+        throw new Error("finalization response lost");
+      }
       return {
         applicationId,
         photoId: value.id,
@@ -524,6 +582,34 @@ function createFixture(
         };
       }
       return null;
+    },
+    async loadExactFinalizedUpload(value, tuple) {
+      events.push("verify");
+      if (options.finalizationVerificationFailure) {
+        throw new Error("verification unavailable");
+      }
+      const exact = metadata.find(
+        (candidate) =>
+          candidate.id === value.id &&
+          candidate.applicationId === value.applicationId &&
+          candidate.storagePath === value.storagePath &&
+          candidate.contentType === value.contentType &&
+          candidate.byteSize === value.byteSize,
+      );
+      if (
+        exact === undefined ||
+        tuple.applicationId !== application.applicationId ||
+        tuple.opportunityId !== application.opportunityId ||
+        tuple.submissionAttemptId !== application.submissionAttemptId ||
+        application.submissionState !== "submitted"
+      ) {
+        return null;
+      }
+      return {
+        applicationId: exact.applicationId,
+        photoId: exact.id,
+        submissionState: "submitted" as const,
+      };
     },
     reportError() {},
   };

@@ -1,6 +1,11 @@
 import { evaluateRules } from "./evaluate-rules";
 import { parseRuleDefinitions, type RuleDefinition } from "./types";
 
+const testContext = {
+  rulesetId: "test-ruleset",
+  rulesetVersion: 1,
+} as const;
+
 describe("evaluateRules", () => {
   describe("when hard failures and reminders both fail", () => {
     // Production break: treating a failed hard rule as eligible or discarding a failed reminder.
@@ -25,13 +30,21 @@ describe("evaluateRules", () => {
       ];
 
       expect(
-        evaluateRules({ isAdult: false, wearsLenses: true }, rules),
+        evaluateRules(
+          { isAdult: false, wearsLenses: true },
+          rules,
+          testContext,
+        ),
       ).toEqual({
+        rulesetId: "test-ruleset",
+        rulesetVersion: 1,
         eligible: false,
         failures: [
           {
             ruleId: "adult-only",
             reason: "This pilot is available to adults only.",
+            effect: "hard_fail",
+            input: false,
           },
         ],
         reviews: [],
@@ -39,6 +52,8 @@ describe("evaluateRules", () => {
           {
             ruleId: "remove-lenses",
             reason: "Remove lenses before the appointment.",
+            effect: "reminder",
+            input: true,
           },
         ],
       });
@@ -100,10 +115,10 @@ describe("evaluateRules", () => {
           reason,
         } as RuleDefinition;
 
-        const result = evaluateRules({ answer }, [rule]);
+        const result = evaluateRules({ answer }, [rule], testContext);
 
         expect(result[bucket]).toEqual([
-          { ruleId: `${operator}-rule`, reason },
+          { ruleId: `${operator}-rule`, reason, effect, input: answer },
         ]);
         expect(result.eligible).toBe(effect !== "hard_fail");
       },
@@ -120,15 +135,50 @@ describe("evaluateRules", () => {
         reason: "Confirm availability with the recruiter.",
       };
 
-      expect(evaluateRules({}, [rule])).toEqual({
+      expect(evaluateRules({}, [rule], testContext)).toEqual({
+        rulesetId: "test-ruleset",
+        rulesetVersion: 1,
         eligible: true,
         failures: [],
         reviews: [
           {
             ruleId: "availability",
             reason: "Confirm availability with the recruiter.",
+            effect: "needs_review",
+            input: null,
           },
         ],
+        reminders: [],
+      });
+    });
+
+    // Production break: letting an explicit null answer pass an inequality or exclusion predicate.
+    it.each([
+      ["not_equals", true],
+      ["none_of", ["bleached", "permed"]],
+    ] as const)("treats null as unanswered for %s", (operator, expected) => {
+      const rule = {
+        id: `${operator}-rule`,
+        field: "answer",
+        operator,
+        expected,
+        effect: "hard_fail",
+        reason: "An answer is required.",
+      } as RuleDefinition;
+
+      expect(evaluateRules({ answer: null }, [rule], testContext)).toEqual({
+        rulesetId: "test-ruleset",
+        rulesetVersion: 1,
+        eligible: false,
+        failures: [
+          {
+            ruleId: `${operator}-rule`,
+            reason: "An answer is required.",
+            effect: "hard_fail",
+            input: null,
+          },
+        ],
+        reviews: [],
         reminders: [],
       });
     });
@@ -154,7 +204,9 @@ describe("evaluateRules", () => {
           reason: "This should not be returned.",
         } as RuleDefinition;
 
-        expect(evaluateRules({ answer }, [rule])).toEqual({
+        expect(evaluateRules({ answer }, [rule], testContext)).toEqual({
+          rulesetId: "test-ruleset",
+          rulesetVersion: 1,
           eligible: true,
           failures: [],
           reviews: [],
@@ -167,22 +219,60 @@ describe("evaluateRules", () => {
   describe("when returning evaluation evidence", () => {
     // Production break: returning mutable result objects that can be altered before persistence.
     it("returns a frozen result and frozen outcome collections", () => {
-      const result = evaluateRules({ isAdult: false }, [
-        {
-          id: "adult-only",
-          field: "isAdult",
-          operator: "equals",
-          expected: true,
-          effect: "hard_fail",
-          reason: "This pilot is available to adults only.",
-        },
-      ]);
+      const result = evaluateRules(
+        { isAdult: false },
+        [
+          {
+            id: "adult-only",
+            field: "isAdult",
+            operator: "equals",
+            expected: true,
+            effect: "hard_fail",
+            reason: "This pilot is available to adults only.",
+          },
+        ],
+        testContext,
+      );
 
       expect(Object.isFrozen(result)).toBe(true);
       expect(Object.isFrozen(result.failures)).toBe(true);
       expect(Object.isFrozen(result.failures[0])).toBe(true);
       expect(Object.isFrozen(result.reviews)).toBe(true);
       expect(Object.isFrozen(result.reminders)).toBe(true);
+    });
+
+    // Production break: persisting an outcome without its ruleset, effect, or evaluated answer.
+    it("includes ruleset and outcome evidence", () => {
+      expect(
+        evaluateRules(
+          { isAdult: false },
+          [
+            {
+              id: "adult-only",
+              field: "isAdult",
+              operator: "equals",
+              expected: true,
+              effect: "hard_fail",
+              reason: "This pilot is available to adults only.",
+            },
+          ],
+          testContext,
+        ),
+      ).toEqual({
+        rulesetId: "test-ruleset",
+        rulesetVersion: 1,
+        eligible: false,
+        failures: [
+          {
+            ruleId: "adult-only",
+            reason: "This pilot is available to adults only.",
+            effect: "hard_fail",
+            input: false,
+          },
+        ],
+        reviews: [],
+        reminders: [],
+      });
     });
   });
 

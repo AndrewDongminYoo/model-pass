@@ -1,6 +1,9 @@
 import type { RuleDefinition, RuleEffect } from "../domain/types";
 import { hairPromotionV1 } from "./hair-promotion-v1";
-import { makeupCertificationV1 } from "./makeup-certification-v1";
+import {
+  makeupCertificationV1,
+  makeupCertificationV1Metadata,
+} from "./makeup-certification-v1";
 
 function expectRuleEffect(
   rules: readonly RuleDefinition[],
@@ -12,6 +15,18 @@ function expectRuleEffect(
 }
 
 describe("makeupCertificationV1", () => {
+  // Production break: presenting a historical makeup template as current without auditable source metadata.
+  it("declares the applicable exam year and official source metadata", () => {
+    expect(makeupCertificationV1Metadata).toEqual({
+      id: "makeup-certification",
+      version: 1,
+      applicableExamYear: 2021,
+      officialSourceUrl:
+        "https://www.q-net.or.kr/rcv013.do?IMPL_ID=null&JM_CD=7967&SELFLD_CD=00&SERIES_CD=04&gyul=05&id=rcv01314s01&sel_yy=2021",
+      sourceAccessedAt: "2026-09-22",
+    });
+  });
+
   // Production break: downgrading permanent procedures or persistent visible marks from hard rules.
   it("makes permanent procedures and persistent visible marks hard rules", () => {
     expectRuleEffect(

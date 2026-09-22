@@ -1,6 +1,7 @@
 import type {
   AnswerValue,
   Answers,
+  EvaluationContext,
   EvaluationResult,
   RuleDefinition,
   RuleOutcome,
@@ -9,17 +10,25 @@ import type {
 export function evaluateRules(
   answers: Answers,
   rules: readonly RuleDefinition[],
+  context: EvaluationContext,
 ): EvaluationResult {
   const failures: RuleOutcome[] = [];
   const reviews: RuleOutcome[] = [];
   const reminders: RuleOutcome[] = [];
 
   for (const rule of rules) {
-    if (passesRule(answers[rule.field], rule)) {
+    const input = answers[rule.field] ?? null;
+
+    if (passesRule(input, rule)) {
       continue;
     }
 
-    const outcome = Object.freeze({ ruleId: rule.id, reason: rule.reason });
+    const outcome = Object.freeze({
+      ruleId: rule.id,
+      reason: rule.reason,
+      effect: rule.effect,
+      input,
+    });
 
     switch (rule.effect) {
       case "hard_fail":
@@ -39,6 +48,8 @@ export function evaluateRules(
   }
 
   return Object.freeze({
+    rulesetId: context.rulesetId,
+    rulesetVersion: context.rulesetVersion,
     eligible: failures.length === 0,
     failures: Object.freeze(failures),
     reviews: Object.freeze(reviews),
@@ -46,11 +57,8 @@ export function evaluateRules(
   });
 }
 
-function passesRule(
-  answer: AnswerValue | undefined,
-  rule: RuleDefinition,
-): boolean {
-  if (answer === undefined) {
+function passesRule(answer: AnswerValue, rule: RuleDefinition): boolean {
+  if (answer === null) {
     return false;
   }
 

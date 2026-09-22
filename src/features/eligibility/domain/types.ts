@@ -31,9 +31,18 @@ export type RuleDefinition =
 export interface RuleOutcome {
   ruleId: string;
   reason: string;
+  effect: RuleEffect;
+  input: AnswerValue;
+}
+
+export interface EvaluationContext {
+  rulesetId: string;
+  rulesetVersion: number;
 }
 
 export interface EvaluationResult {
+  readonly rulesetId: string;
+  readonly rulesetVersion: number;
   readonly eligible: boolean;
   readonly failures: readonly RuleOutcome[];
   readonly reviews: readonly RuleOutcome[];

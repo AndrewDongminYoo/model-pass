@@ -1,5 +1,14 @@
 import type { RuleDefinition } from "../domain/types";
 
+export const makeupCertificationV1Metadata = {
+  id: "makeup-certification",
+  version: 1,
+  applicableExamYear: 2021,
+  officialSourceUrl:
+    "https://www.q-net.or.kr/rcv013.do?IMPL_ID=null&JM_CD=7967&SELFLD_CD=00&SERIES_CD=04&gyul=05&id=rcv01314s01&sel_yy=2021",
+  sourceAccessedAt: "2026-09-22",
+} as const;
+
 export const makeupCertificationV1 = [
   {
     id: "adult-only",

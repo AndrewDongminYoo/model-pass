@@ -142,3 +142,87 @@ it("requires reconfirmation when a confirmed preview is replaced", async () => {
     screen.getByRole("button", { name: "Copy opportunity" }),
   ).toBeDisabled();
 });
+
+it("keeps confirmation and shows an accessible error when clipboard copying rejects", async () => {
+  const user = userEvent.setup();
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(
+    navigator,
+    "clipboard",
+  );
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockRejectedValue(new Error("Denied")) },
+  });
+  const draft: OpportunityDraft = {
+    category: "hair_promotion",
+    title: "Layered cut promotion exam",
+    startsAt: "2099-06-01T10:00",
+    closesAt: "2099-05-31T18:00",
+    venueDistrict: "서울 강남구",
+    expectedMinutes: 90,
+    benefit: { type: "procedure", description: "Free layered cut" },
+    rulesetId: "hair-promotion",
+    rulesetVersion: 1,
+    rules: [],
+  };
+
+  try {
+    render(<OpportunityPreview draft={draft} />);
+    const confirmation = screen.getByLabelText(
+      "I confirm this preview matches the intended opportunity.",
+    );
+    await user.click(confirmation);
+    await user.click(screen.getByRole("button", { name: "Copy opportunity" }));
+
+    const error = await screen.findByRole("alert");
+    expect(error).toHaveTextContent(
+      "Could not copy the opportunity. Try again.",
+    );
+    expect(confirmation).toBeChecked();
+  } finally {
+    if (clipboardDescriptor) {
+      Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
+  }
+});
+
+it("shows an accessible error when clipboard access is unavailable", async () => {
+  const user = userEvent.setup();
+  const clipboardDescriptor = Object.getOwnPropertyDescriptor(
+    navigator,
+    "clipboard",
+  );
+  Reflect.deleteProperty(navigator, "clipboard");
+  const draft: OpportunityDraft = {
+    category: "hair_promotion",
+    title: "Layered cut promotion exam",
+    startsAt: "2099-06-01T10:00",
+    closesAt: "2099-05-31T18:00",
+    venueDistrict: "서울 강남구",
+    expectedMinutes: 90,
+    benefit: { type: "procedure", description: "Free layered cut" },
+    rulesetId: "hair-promotion",
+    rulesetVersion: 1,
+    rules: [],
+  };
+
+  try {
+    render(<OpportunityPreview draft={draft} />);
+    await user.click(
+      screen.getByLabelText(
+        "I confirm this preview matches the intended opportunity.",
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Copy opportunity" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not copy the opportunity. Try again.",
+    );
+  } finally {
+    if (clipboardDescriptor) {
+      Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+    }
+  }
+});

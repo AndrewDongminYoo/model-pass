@@ -47,13 +47,22 @@ export function OpportunityPreview({
 }: OpportunityPreviewProps) {
   const [confirmedDraft, setConfirmedDraft] = useState<OpportunityDraft>();
   const [copiedDraft, setCopiedDraft] = useState<OpportunityDraft>();
+  const [copyErrorDraft, setCopyErrorDraft] = useState<OpportunityDraft>();
   const examYear =
     applicableExamYear ?? makeupCertificationV1Metadata.applicableExamYear;
   const confirmed = confirmedDraft === draft;
 
   async function copyOpportunity() {
-    await navigator.clipboard.writeText(previewText(draft, examYear));
-    setCopiedDraft(draft);
+    try {
+      const clipboard = navigator.clipboard;
+      if (!clipboard) throw new Error("Clipboard access is unavailable.");
+
+      await clipboard.writeText(previewText(draft, examYear));
+      setCopiedDraft(draft);
+      setCopyErrorDraft(undefined);
+    } catch {
+      setCopyErrorDraft(draft);
+    }
   }
 
   return (
@@ -99,6 +108,9 @@ export function OpportunityPreview({
         Copy opportunity
       </button>
       {copiedDraft === draft && <p role="status">Copied.</p>}
+      {copyErrorDraft === draft && (
+        <p role="alert">Could not copy the opportunity. Try again.</p>
+      )}
     </section>
   );
 }

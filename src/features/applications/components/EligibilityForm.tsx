@@ -60,7 +60,7 @@ export function EligibilityForm({
   }
 
   return (
-    <form noValidate onSubmit={handleSubmit}>
+    <form className="surface form-stack" noValidate onSubmit={handleSubmit}>
       <h2>Check eligibility</h2>
       {questions.map((question) => {
         const errorId = `${question.field}-eligibility-error`;
@@ -69,31 +69,34 @@ export function EligibilityForm({
         if (question.answerType === "boolean") {
           return (
             <fieldset
+              className="choice-card"
               key={question.field}
               aria-describedby={error ? errorId : undefined}
               aria-invalid={error ? true : undefined}
             >
               <legend>{question.label}</legend>
-              <label>
-                <input
-                  type="radio"
-                  name={question.field}
-                  value="yes"
-                  checked={answers[question.field] === true}
-                  onChange={() => setAnswer(question.field, true)}
-                />
-                Yes
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name={question.field}
-                  value="no"
-                  checked={answers[question.field] === false}
-                  onChange={() => setAnswer(question.field, false)}
-                />
-                No
-              </label>
+              <div className="choice-options">
+                <label className="choice">
+                  <input
+                    type="radio"
+                    name={question.field}
+                    value="yes"
+                    checked={answers[question.field] === true}
+                    onChange={() => setAnswer(question.field, true)}
+                  />
+                  Yes
+                </label>
+                <label className="choice">
+                  <input
+                    type="radio"
+                    name={question.field}
+                    value="no"
+                    checked={answers[question.field] === false}
+                    onChange={() => setAnswer(question.field, false)}
+                  />
+                  No
+                </label>
+              </div>
               {error ? <p id={errorId}>{error}</p> : null}
             </fieldset>
           );
@@ -101,7 +104,7 @@ export function EligibilityForm({
 
         const inputId = `${question.field}-answer`;
         return (
-          <div key={question.field}>
+          <div className="field" key={question.field}>
             <label htmlFor={inputId}>{question.label}</label>
             <input
               id={inputId}

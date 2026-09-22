@@ -15,7 +15,10 @@ export function AttendanceSummary({
 }: AttendanceSummaryProps) {
   const summary = reduceAttendance(events, viewerParty);
   return (
-    <section aria-label="Attendance history">
+    <section
+      className="surface surface--subtle"
+      aria-label="Attendance history"
+    >
       <h3>Attendance history</h3>
       <FactCounts label="Recruiter facts" counts={summary.recruiter} />
       <FactCounts label="Applicant facts" counts={summary.applicant} />
@@ -49,7 +52,7 @@ function FactCounts({
   };
 }) {
   return (
-    <div role="group" aria-label={label}>
+    <div className="detail-section" role="group" aria-label={label}>
       <h4>{label}</h4>
       <ul>
         <li>Confirmed: {counts.confirmed}</li>

@@ -173,7 +173,7 @@ export function AttendanceManager({
   );
 
   return (
-    <section aria-label="Attendance management">
+    <section className="detail-section" aria-label="Attendance management">
       <AttendanceSummary events={visibleEvents} viewerParty={viewerParty} />
       {loading ? <p role="status">Loading attendance history.</p> : null}
       {!loading && attendance?.selected === false ? (
@@ -181,18 +181,32 @@ export function AttendanceManager({
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
       {error === "Could not load attendance history." ? (
-        <button type="button" disabled={loading} onClick={() => void load()}>
+        <button
+          className="button--secondary"
+          type="button"
+          disabled={loading}
+          onClick={() => void load()}
+        >
           Retry attendance
         </button>
       ) : null}
-      {success ? <p role="status">{success}</p> : null}
+      {success ? (
+        <p className="status--success" role="status">
+          {success}
+        </p>
+      ) : null}
       {pendingAction !== undefined ? (
         <p role="status">Recording attendance.</p>
       ) : null}
       {!loading && attendance?.selected === true ? (
-        <div role="group" aria-label="Attendance actions">
+        <div
+          className="button-row"
+          role="group"
+          aria-label="Attendance actions"
+        >
           {allowedActions.map((action) => (
             <button
+              className="button--secondary"
               key={action}
               type="button"
               disabled={pendingAction !== undefined}
@@ -205,6 +219,7 @@ export function AttendanceManager({
           ))}
           {disputableNoShows.map((event) => (
             <button
+              className="button--danger"
               key={`dispute-${event.id}`}
               type="button"
               disabled={pendingAction !== undefined}

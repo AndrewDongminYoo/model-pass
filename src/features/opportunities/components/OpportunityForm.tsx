@@ -75,8 +75,9 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
   }
 
   return (
-    <form onSubmit={submit} noValidate>
-      <div>
+    <form className="surface form-stack" onSubmit={submit} noValidate>
+      <h2>Session details</h2>
+      <div className="field">
         <label htmlFor="category">Category</label>
         <select
           id="category"
@@ -91,7 +92,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
           </option>
         </select>
       </div>
-      <div>
+      <div className="field">
         <label htmlFor="procedure">Procedure</label>
         <input
           id="procedure"
@@ -100,7 +101,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
         />
         {errors.title && <p role="alert">{errors.title}</p>}
       </div>
-      <div>
+      <div className="field">
         <label htmlFor="starts-at">Starts at</label>
         <input
           id="starts-at"
@@ -110,7 +111,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
         />
         {errors.startsAt && <p role="alert">{errors.startsAt}</p>}
       </div>
-      <div>
+      <div className="field">
         <label htmlFor="closes-at">Closes at</label>
         <input
           id="closes-at"
@@ -120,7 +121,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
         />
         {errors.closesAt && <p role="alert">{errors.closesAt}</p>}
       </div>
-      <div>
+      <div className="field">
         <label htmlFor="venue-district">Venue district</label>
         <input
           id="venue-district"
@@ -129,7 +130,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
         />
         {errors.venueDistrict && <p role="alert">{errors.venueDistrict}</p>}
       </div>
-      <div>
+      <div className="field">
         <label htmlFor="expected-minutes">Expected duration (minutes)</label>
         <input
           id="expected-minutes"
@@ -140,7 +141,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
         />
         {errors.expectedMinutes && <p role="alert">{errors.expectedMinutes}</p>}
       </div>
-      <div>
+      <div className="field">
         <label htmlFor="benefit-type">Benefit type</label>
         <select
           id="benefit-type"
@@ -153,7 +154,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
           <option value="cash">Cash</option>
         </select>
       </div>
-      <div>
+      <div className="field">
         <label htmlFor="benefit-description">Benefit description</label>
         <input
           id="benefit-description"
@@ -165,7 +166,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
         )}
       </div>
       {benefitType === "cash" && (
-        <div>
+        <div className="field">
           <label htmlFor="cash-amount">Cash amount</label>
           <input
             id="cash-amount"

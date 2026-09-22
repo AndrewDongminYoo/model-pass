@@ -67,8 +67,8 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
 
   if (user === undefined) {
     return (
-      <main>
-        <h1>Model Pass</h1>
+      <main className="app-shell app-shell--narrow auth-shell">
+        <h1 className="brand-name">Model Pass</h1>
         <p role="status">Checking recruiter session…</p>
       </main>
     );
@@ -76,11 +76,17 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
   if (user !== null) return children;
 
   return (
-    <main>
-      <h1>Model Pass</h1>
-      <h2>Recruiter sign in</h2>
-      <form onSubmit={signIn}>
-        <div>
+    <main className="app-shell app-shell--narrow auth-shell">
+      <header className="page-header">
+        <p className="eyebrow">Recruiter workspace</p>
+        <h1 className="brand-name">Model Pass</h1>
+        <p className="lede">
+          Review structured applications without sorting through chat threads.
+        </p>
+      </header>
+      <form className="surface form-stack" onSubmit={signIn}>
+        <h2>Recruiter sign in</h2>
+        <div className="field">
           <label htmlFor="recruiter-email">Email</label>
           <input
             id="recruiter-email"
@@ -91,7 +97,7 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
             onChange={(event) => setEmail(event.target.value)}
           />
         </div>
-        <div>
+        <div className="field">
           <label htmlFor="recruiter-password">Password</label>
           <input
             id="recruiter-password"
@@ -105,8 +111,8 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
         <button type="submit" disabled={submitting}>
           {submitting ? "Signing in…" : "Sign in"}
         </button>
+        {errorMessage && <p role="alert">{errorMessage}</p>}
       </form>
-      {errorMessage && <p role="alert">{errorMessage}</p>}
     </main>
   );
 }

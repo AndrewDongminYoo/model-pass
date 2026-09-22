@@ -61,14 +61,18 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
   ];
 
   return (
-    <article>
-      <h2>{application.applicantDisplayName}</h2>
-      <p>{application.applicantPhone}</p>
-      <p>
-        Submission time:{" "}
-        <time dateTime={application.createdAt}>{application.createdAt}</time>
-      </p>
-      <section aria-label="Deterministic evaluation">
+    <article className="surface application-card">
+      <header className="application-card__header">
+        <div>
+          <h2>{application.applicantDisplayName}</h2>
+          <p>{application.applicantPhone}</p>
+        </div>
+        <p className="helper-text">
+          Submitted{" "}
+          <time dateTime={application.createdAt}>{application.createdAt}</time>
+        </p>
+      </header>
+      <section className="detail-section" aria-label="Deterministic evaluation">
         <h3>Deterministic evaluation</h3>
         <p>{application.evaluation.eligible ? "Eligible" : "Not eligible"}</p>
         <p>
@@ -86,7 +90,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
           </ul>
         ) : null}
       </section>
-      <section aria-label="Application answers">
+      <section className="detail-section" aria-label="Application answers">
         <h3>Answers</h3>
         <ul>
           {application.answers.map((answer) => (
@@ -96,7 +100,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
           ))}
         </ul>
       </section>
-      <section aria-label="Private photos">
+      <section className="detail-section" aria-label="Private photos">
         <h3>Private photos</h3>
         {application.photos.length === 0 ? <p>No photo uploaded.</p> : null}
         {application.photos.map((photo, index) => {
@@ -109,6 +113,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
                 Photo {ordinal}: {photo.contentType}, {photo.byteSize} bytes
               </p>
               <button
+                className="button--secondary"
                 type="button"
                 disabled={pendingPhotoId === photo.id}
                 onClick={() => void requestPhoto(photo.id)}
@@ -118,7 +123,12 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
                   : `View private photo ${ordinal}`}
               </button>
               {viewUrl !== undefined ? (
-                <a href={viewUrl} target="_blank" rel="noreferrer">
+                <a
+                  className="action-link"
+                  href={viewUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   Open private photo {ordinal}
                 </a>
               ) : null}
@@ -135,15 +145,17 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
       ) : (
         <>
           {selected === false ? (
-            <button
-              type="button"
-              disabled={selectionPending}
-              onClick={() => void select()}
-            >
-              {selectionPending
-                ? "Selecting application"
-                : "Select application"}
-            </button>
+            <div className="detail-section">
+              <button
+                type="button"
+                disabled={selectionPending}
+                onClick={() => void select()}
+              >
+                {selectionPending
+                  ? "Selecting application"
+                  : "Select application"}
+              </button>
+            </div>
           ) : null}
           {selectionError ? <p role="alert">{selectionError}</p> : null}
           <AttendanceManager

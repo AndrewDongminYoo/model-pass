@@ -114,35 +114,52 @@ export function OpportunityPreview({
   }
 
   return (
-    <section aria-labelledby="opportunity-preview-heading">
+    <section className="surface" aria-labelledby="opportunity-preview-heading">
       <h2 id="opportunity-preview-heading">Opportunity preview</h2>
-      <dl>
-        <dt>Procedure</dt>
-        <dd>{draft.title}</dd>
-        <dt>Starts at</dt>
-        <dd>{draft.startsAt}</dd>
-        <dt>Closes at</dt>
-        <dd>{draft.closesAt}</dd>
-        <dt>Location</dt>
-        <dd>{draft.venueDistrict}</dd>
-        <dt>Duration</dt>
-        <dd>{draft.expectedMinutes} minutes</dd>
-        <dt>Benefit</dt>
-        <dd>{formatBenefit(draft)}</dd>
+      <dl className="summary-grid">
+        <div>
+          <dt>Procedure</dt>
+          <dd>{draft.title}</dd>
+        </div>
+        <div>
+          <dt>Starts at</dt>
+          <dd>{draft.startsAt}</dd>
+        </div>
+        <div>
+          <dt>Closes at</dt>
+          <dd>{draft.closesAt}</dd>
+        </div>
+        <div>
+          <dt>Location</dt>
+          <dd>{draft.venueDistrict}</dd>
+        </div>
+        <div>
+          <dt>Duration</dt>
+          <dd>{draft.expectedMinutes} minutes</dd>
+        </div>
+        <div>
+          <dt>Benefit</dt>
+          <dd>{formatBenefit(draft)}</dd>
+        </div>
       </dl>
       {draft.category === "makeup_certification" && (
         <p>Applicable exam year: {examYear}</p>
       )}
-      <RuleList
-        heading="Hard rules"
-        reasons={ruleReasons(draft, "hard_fail")}
-      />
-      <RuleList
-        heading="Review items"
-        reasons={ruleReasons(draft, "needs_review")}
-      />
-      <RuleList heading="Reminders" reasons={ruleReasons(draft, "reminder")} />
-      <label>
+      <div className="rule-grid">
+        <RuleList
+          heading="Hard rules"
+          reasons={ruleReasons(draft, "hard_fail")}
+        />
+        <RuleList
+          heading="Review items"
+          reasons={ruleReasons(draft, "needs_review")}
+        />
+        <RuleList
+          heading="Reminders"
+          reasons={ruleReasons(draft, "reminder")}
+        />
+      </div>
+      <label className="choice">
         <input
           type="checkbox"
           checked={confirmed}
@@ -152,18 +169,30 @@ export function OpportunityPreview({
         />
         I confirm this preview matches the intended opportunity.
       </label>
-      <button type="button" disabled={!confirmed} onClick={copyOpportunity}>
+      <button
+        className="button--secondary"
+        type="button"
+        disabled={!confirmed}
+        onClick={copyOpportunity}
+      >
         Copy opportunity
       </button>
-      {copiedDraft === draft && <p role="status">Copied.</p>}
+      {copiedDraft === draft && (
+        <p className="status--success" role="status">
+          Copied.
+        </p>
+      )}
       {copyErrorDraft === draft && (
         <p role="alert">Could not copy the opportunity. Try again.</p>
       )}
       {onPublish && (
-        <section aria-labelledby="hard-rule-confirmation-heading">
+        <section
+          className="detail-section form-stack"
+          aria-labelledby="hard-rule-confirmation-heading"
+        >
           <h3 id="hard-rule-confirmation-heading">Confirm every hard rule</h3>
           {hardRules.map((rule) => (
-            <label key={rule.id}>
+            <label className="choice" key={rule.id}>
               <input
                 type="checkbox"
                 checked={confirmedHardRuleIds.includes(rule.id)}
@@ -185,10 +214,20 @@ export function OpportunityPreview({
             <p role="alert">Could not publish the opportunity. Try again.</p>
           )}
           {publication?.draft === draft && (
-            <div>
-              <p role="status">Opportunity published.</p>
-              <a href={publication.result.applicantPath}>Applicant link</a>
-              <a href={publication.result.recruiterReviewPath}>
+            <div className="link-row">
+              <p className="status--success" role="status">
+                Opportunity published.
+              </p>
+              <a
+                className="action-link"
+                href={publication.result.applicantPath}
+              >
+                Applicant link
+              </a>
+              <a
+                className="action-link"
+                href={publication.result.recruiterReviewPath}
+              >
                 Recruiter review link
               </a>
             </div>
@@ -207,7 +246,7 @@ function RuleList({
   reasons: string[];
 }) {
   return (
-    <section aria-label={heading}>
+    <section className="rule-card" aria-label={heading}>
       <h3>{heading}</h3>
       {reasons.length > 0 ? (
         <ul>

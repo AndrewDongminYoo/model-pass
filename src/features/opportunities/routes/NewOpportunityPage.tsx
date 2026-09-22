@@ -9,9 +9,15 @@ export function NewOpportunityPage() {
   const [draft, setDraft] = useState<OpportunityDraft>();
 
   return (
-    <main>
-      <h1>Model Pass</h1>
-      <h2>Create opportunity</h2>
+    <main className="app-shell">
+      <header className="page-header">
+        <p className="eyebrow">Model Pass · Recruiter</p>
+        <h1>Create opportunity</h1>
+        <p className="lede">
+          Turn the requirements for one session into a clear, reviewable
+          application flow.
+        </p>
+      </header>
       <OpportunityForm onSubmit={setDraft} />
       {draft && (
         <OpportunityPreview

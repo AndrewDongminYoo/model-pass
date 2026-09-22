@@ -11,7 +11,7 @@ export function EligibilityResult({
 }: EligibilityResultProps) {
   if (!result.eligible) {
     return (
-      <section aria-labelledby="eligibility-failed-heading">
+      <section className="surface" aria-labelledby="eligibility-failed-heading">
         <h2 id="eligibility-failed-heading">Not eligible</h2>
         <div role="alert">
           <p>This opportunity cannot accept the answers below.</p>
@@ -26,7 +26,7 @@ export function EligibilityResult({
   }
 
   return (
-    <section aria-labelledby="eligibility-passed-heading">
+    <section className="surface" aria-labelledby="eligibility-passed-heading">
       <h2 id="eligibility-passed-heading">Eligible to continue</h2>
       {result.reminders.length > 0 ? (
         <div>
@@ -38,7 +38,7 @@ export function EligibilityResult({
           </ul>
         </div>
       ) : null}
-      <div>
+      <div className="field">
         <label htmlFor="requested-photo">Requested photo</label>
         <input
           id="requested-photo"
@@ -46,7 +46,7 @@ export function EligibilityResult({
           disabled
           aria-describedby="requested-photo-limitation"
         />
-        <p id="requested-photo-limitation">
+        <p className="helper-text" id="requested-photo-limitation">
           Photo upload is not available in this step. No photo is uploaded or
           submitted with this application yet.
         </p>

@@ -48,33 +48,62 @@ export function ApplyPage() {
   }, [opportunityId]);
 
   if (opportunityId === undefined) {
-    return <p role="alert">This opportunity is unavailable.</p>;
+    return (
+      <main className="app-shell app-shell--narrow auth-shell">
+        <p role="alert">This opportunity is unavailable.</p>
+      </main>
+    );
   }
   if (loaded?.opportunityId === opportunityId && loaded.error !== undefined) {
-    return <p role="alert">{loaded.error}</p>;
+    return (
+      <main className="app-shell app-shell--narrow auth-shell">
+        <p role="alert">{loaded.error}</p>
+      </main>
+    );
   }
   if (
     loaded?.opportunityId !== opportunityId ||
     loaded.opportunity === undefined
   ) {
-    return <p role="status">Loading opportunity</p>;
+    return (
+      <main className="app-shell app-shell--narrow auth-shell">
+        <p role="status">Loading opportunity</p>
+      </main>
+    );
   }
   const opportunity = loaded.opportunity;
 
   return (
-    <main>
-      <h1>{opportunity.title}</h1>
-      <dl>
-        <dt>Schedule</dt>
-        <dd>{new Date(opportunity.startsAt).toLocaleString()}</dd>
-        <dt>Venue area</dt>
-        <dd>{opportunity.venueDistrict}</dd>
-        <dt>Expected duration</dt>
-        <dd>{opportunity.expectedMinutes} minutes</dd>
-        <dt>Benefit</dt>
-        <dd>{formatBenefit(opportunity)}</dd>
-        <dt>Applications close</dt>
-        <dd>{new Date(opportunity.closesAt).toLocaleString()}</dd>
+    <main className="app-shell">
+      <header className="page-header">
+        <p className="eyebrow">Model Pass · Application</p>
+        <h1>{opportunity.title}</h1>
+        <p className="lede">
+          Check the session details and eligibility before sharing personal
+          information.
+        </p>
+      </header>
+      <dl className="summary-grid">
+        <div>
+          <dt>Schedule</dt>
+          <dd>{new Date(opportunity.startsAt).toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>Venue area</dt>
+          <dd>{opportunity.venueDistrict}</dd>
+        </div>
+        <div>
+          <dt>Expected duration</dt>
+          <dd>{opportunity.expectedMinutes} minutes</dd>
+        </div>
+        <div>
+          <dt>Benefit</dt>
+          <dd>{formatBenefit(opportunity)}</dd>
+        </div>
+        <div>
+          <dt>Applications close</dt>
+          <dd>{new Date(opportunity.closesAt).toLocaleString()}</dd>
+        </div>
       </dl>
       <ApplicationForm key={opportunity.id} opportunity={opportunity} />
     </main>

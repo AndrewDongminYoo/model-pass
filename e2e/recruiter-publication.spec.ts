@@ -4,6 +4,7 @@ test("publishes an authenticated recruiter opportunity and returns private workf
   browser,
   pilotData,
 }) => {
+  const longProcedure = "LivePublicationVerification".repeat(5);
   const context = await browser.newContext({
     baseURL: e2eBaseUrl,
     storageState: pilotData.recruiterOne.storageState,
@@ -16,13 +17,26 @@ test("publishes an authenticated recruiter opportunity and returns private workf
       page.getByRole("heading", { name: "Create opportunity" }),
     ).toBeVisible();
 
-    await page.getByLabel("Procedure").fill("Live publication verification");
+    await page.getByLabel("Procedure").fill(longProcedure);
     await page.getByLabel("Starts at").fill(localDateTime(8));
     await page.getByLabel("Closes at").fill(localDateTime(7));
     await page
       .getByLabel("Benefit description")
       .fill("Hair service at no charge");
     await page.getByRole("button", { name: "Preview opportunity" }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(
+      await page.getByText(longProcedure, { exact: true }).evaluate((value) => {
+        const grid = value.closest("dl");
+        if (grid === null) return false;
+        const text = document.createRange();
+        text.selectNodeContents(value);
+        return (
+          text.getBoundingClientRect().right <=
+          grid.getBoundingClientRect().right
+        );
+      }),
+    ).toBe(true);
 
     const hardRuleConfirmations = page.getByLabel(/^Confirm hard rule:/);
     const hardRuleCount = await hardRuleConfirmations.count();
@@ -33,14 +47,23 @@ test("publishes an authenticated recruiter opportunity and returns private workf
 
     await page.getByRole("button", { name: "Publish opportunity" }).click();
     await expect(page.getByText("Opportunity published.")).toBeVisible();
-    await expect(
-      page.getByRole("link", { name: "Applicant link" }),
-    ).toHaveAttribute("href", /^\/opportunities\/[0-9a-f-]+\/apply$/);
-    await expect(
-      page.getByRole("link", { name: "Recruiter review link" }),
-    ).toHaveAttribute(
+    const applicantLink = page.getByRole("link", { name: "Applicant link" });
+    const recruiterLink = page.getByRole("link", {
+      name: "Recruiter review link",
+    });
+    await expect(applicantLink).toHaveAttribute(
+      "href",
+      /^\/opportunities\/[0-9a-f-]+\/apply$/,
+    );
+    await expect(recruiterLink).toHaveAttribute(
       "href",
       /^\/recruiter\/opportunities\/[0-9a-f-]+\/applications$/,
+    );
+    expect((await applicantLink.boundingBox())?.height).toBeGreaterThanOrEqual(
+      44,
+    );
+    expect((await recruiterLink.boundingBox())?.height).toBeGreaterThanOrEqual(
+      44,
     );
   } finally {
     await context.close();

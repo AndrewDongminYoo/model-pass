@@ -38,32 +38,44 @@ export function ApplicantPrivacyControls({
   const isPending = pendingAction !== null;
 
   return (
-    <section aria-label="Privacy controls">
+    <section className="detail-section" aria-label="Privacy controls">
       <h3>Privacy controls</h3>
       <p>
         A deletion request is subject to retention obligations and does not
         immediately erase records.
       </p>
-      <button
-        type="button"
-        disabled={isPending}
-        onClick={() => void submit("revoke_future_opportunity_consent")}
-      >
-        Revoke future-opportunity consent
-      </button>
-      <button
-        type="button"
-        disabled={isPending}
-        onClick={() => void submit("request_deletion")}
-      >
-        Request deletion
-      </button>
+      <div className="button-row">
+        <button
+          className="button--secondary"
+          type="button"
+          disabled={isPending}
+          onClick={() => void submit("revoke_future_opportunity_consent")}
+        >
+          Revoke future-opportunity consent
+        </button>
+        <button
+          className="button--danger"
+          type="button"
+          disabled={isPending}
+          onClick={() => void submit("request_deletion")}
+        >
+          Request deletion
+        </button>
+      </div>
       {isPending ? <p role="status">Submitting privacy request.</p> : null}
-      {statusMessage ? <p role="status">{statusMessage}</p> : null}
+      {statusMessage ? (
+        <p className="status--success" role="status">
+          {statusMessage}
+        </p>
+      ) : null}
       {failedAction ? (
         <div role="alert">
           <p>Could not submit your privacy request. You can retry safely.</p>
-          <button type="button" onClick={() => void submit(failedAction)}>
+          <button
+            className="button--secondary"
+            type="button"
+            onClick={() => void submit(failedAction)}
+          >
             Retry privacy request
           </button>
         </div>

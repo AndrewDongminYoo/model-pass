@@ -157,11 +157,18 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
 
   if (receiptCapability !== undefined) {
     return (
-      <section aria-labelledby="application-received-heading">
+      <section
+        className="surface"
+        aria-labelledby="application-received-heading"
+      >
         <h2 id="application-received-heading">Application received</h2>
-        <p>Receipt: {receiptCapability.applicationId}</p>
-        <p>Private management code: {receiptCapability.submissionAttemptId}</p>
-        <p>Keep this private management code and do not share it.</p>
+        <p className="code-value">Receipt: {receiptCapability.applicationId}</p>
+        <p className="code-value">
+          Private management code: {receiptCapability.submissionAttemptId}
+        </p>
+        <p className="callout callout--warning">
+          Keep this private management code and do not share it.
+        </p>
         <AttendanceManager
           capability={{
             applicationId: receiptCapability.applicationId,
@@ -202,20 +209,24 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
     opportunityRequestsPhoto(opportunity)
   ) {
     return (
-      <section aria-labelledby="photo-required-heading">
+      <section className="surface" aria-labelledby="photo-required-heading">
         <h2 id="photo-required-heading">Photo required to finish</h2>
-        <label htmlFor="job-specific-photo">Job-specific photo</label>
-        <input
-          id="job-specific-photo"
-          type="file"
-          accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
-          disabled={photoPending}
-          onChange={(event) => {
-            setPhoto(event.currentTarget.files?.[0]);
-            setPhotoError(undefined);
-          }}
-        />
-        <p>JPEG, PNG, HEIC, or HEIF. Maximum 10 MiB.</p>
+        <div className="field">
+          <label htmlFor="job-specific-photo">Job-specific photo</label>
+          <input
+            id="job-specific-photo"
+            type="file"
+            accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
+            disabled={photoPending}
+            onChange={(event) => {
+              setPhoto(event.currentTarget.files?.[0]);
+              setPhotoError(undefined);
+            }}
+          />
+          <p className="helper-text">
+            JPEG, PNG, HEIC, or HEIF. Maximum 10 MiB.
+          </p>
+        </div>
         <button
           type="button"
           disabled={photo === undefined || photoPending}
@@ -383,49 +394,59 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   }
 
   return (
-    <>
-      <form noValidate onSubmit={handleRecovery}>
+    <div className="section-stack">
+      <form
+        className="surface surface--subtle form-stack"
+        noValidate
+        onSubmit={handleRecovery}
+      >
         <h2>Recover application management</h2>
-        <label htmlFor="recovery-application-id">Application ID</label>
-        <input
-          id="recovery-application-id"
-          type="text"
-          value={recovery.applicationId}
-          aria-describedby={recoveryError ? "recovery-error" : undefined}
-          aria-invalid={recoveryError ? true : undefined}
-          onChange={(event) => {
-            const applicationId = event.currentTarget.value;
-            setRecovery((current) => ({
-              ...current,
-              applicationId,
-            }));
-            setRecoveryError(undefined);
-          }}
-        />
-        <label htmlFor="recovery-private-management-code">
-          Private management code
-        </label>
-        <input
-          id="recovery-private-management-code"
-          type="text"
-          value={recovery.submissionAttemptId}
-          aria-describedby={recoveryError ? "recovery-error" : undefined}
-          aria-invalid={recoveryError ? true : undefined}
-          onChange={(event) => {
-            const submissionAttemptId = event.currentTarget.value;
-            setRecovery((current) => ({
-              ...current,
-              submissionAttemptId,
-            }));
-            setRecoveryError(undefined);
-          }}
-        />
+        <div className="field">
+          <label htmlFor="recovery-application-id">Application ID</label>
+          <input
+            id="recovery-application-id"
+            type="text"
+            value={recovery.applicationId}
+            aria-describedby={recoveryError ? "recovery-error" : undefined}
+            aria-invalid={recoveryError ? true : undefined}
+            onChange={(event) => {
+              const applicationId = event.currentTarget.value;
+              setRecovery((current) => ({
+                ...current,
+                applicationId,
+              }));
+              setRecoveryError(undefined);
+            }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="recovery-private-management-code">
+            Private management code
+          </label>
+          <input
+            id="recovery-private-management-code"
+            type="text"
+            value={recovery.submissionAttemptId}
+            aria-describedby={recoveryError ? "recovery-error" : undefined}
+            aria-invalid={recoveryError ? true : undefined}
+            onChange={(event) => {
+              const submissionAttemptId = event.currentTarget.value;
+              setRecovery((current) => ({
+                ...current,
+                submissionAttemptId,
+              }));
+              setRecoveryError(undefined);
+            }}
+          />
+        </div>
         {recoveryError ? (
           <p id="recovery-error" role="alert">
             {recoveryError}
           </p>
         ) : null}
-        <button type="submit">Recover management</button>
+        <button className="button--secondary" type="submit">
+          Recover management
+        </button>
       </form>
       <EligibilityForm
         rules={opportunity.rules}
@@ -444,7 +465,7 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         />
       ) : null}
       {evaluation?.eligible && showApplication ? (
-        <form noValidate onSubmit={handleSubmit}>
+        <form className="surface form-stack" noValidate onSubmit={handleSubmit}>
           <h2>Application details</h2>
           <TextField
             id="applicant-display-name"
@@ -492,7 +513,7 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
           </button>
         </form>
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -715,7 +736,7 @@ function TextField({
 }: TextFieldProps) {
   const errorId = `${id}-error`;
   return (
-    <div>
+    <div className="field">
       <label htmlFor={id}>{label}</label>
       <input
         id={id}
@@ -747,8 +768,8 @@ function CheckboxField({
 }: CheckboxFieldProps) {
   const errorId = `${id}-error`;
   return (
-    <div>
-      <label htmlFor={id}>
+    <div className="field">
+      <label className="choice" htmlFor={id}>
         <input
           id={id}
           type="checkbox"

@@ -62,8 +62,14 @@ export function ApplicationsPage() {
   const applications = currentResult?.applications;
 
   return (
-    <main>
-      <h1>Applications</h1>
+    <main className="app-shell">
+      <header className="page-header">
+        <p className="eyebrow">Model Pass · Recruiter</p>
+        <h1>Applications</h1>
+        <p className="lede">
+          Review rule outcomes and applicant details before making a selection.
+        </p>
+      </header>
       {error ? <p role="alert">{error}</p> : null}
       {applications === undefined && error === undefined ? (
         <p role="status">Loading applications</p>

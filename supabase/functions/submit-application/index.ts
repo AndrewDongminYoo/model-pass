@@ -9,7 +9,10 @@ import type {
   SubmitApplicationInput,
   SubmitApplicationResult,
 } from "../../../src/features/applications/domain/application.ts";
-import { parseSubmitApplicationInput } from "../../../src/features/applications/domain/application.ts";
+import {
+  isEvaluationResult,
+  parseSubmitApplicationInput,
+} from "../../../src/features/applications/domain/application.ts";
 
 export interface OpportunityForSubmission {
   id: string;
@@ -34,14 +37,35 @@ export interface ApplicationPersistenceCommand {
   evaluationSnapshot: EvaluationResult;
 }
 
+export type ApplicationPersistenceResult = SubmitApplicationResult;
+
+export interface ExistingApplicationAttempt {
+  applicationId: string;
+  submissionFingerprint: string;
+  evaluation: EvaluationResult;
+}
+
+export interface SubmissionIntent {
+  opportunityId: string;
+  submissionAttemptId: string;
+  applicant: SubmitApplicationInput["applicant"];
+  answers: SubmitApplicationInput["answers"];
+  currentApplicationConsent: true;
+  futureOpportunityConsent: boolean;
+}
+
 export interface SubmissionDependencies {
   now: () => Date;
+  loadExistingAttempt: (
+    opportunityId: string,
+    submissionAttemptId: string,
+  ) => Promise<ExistingApplicationAttempt | null>;
   loadOpportunity: (
     opportunityId: string,
   ) => Promise<OpportunityForSubmission | null>;
   persistApplication: (
     command: ApplicationPersistenceCommand,
-  ) => Promise<string>;
+  ) => Promise<ApplicationPersistenceResult>;
 }
 
 interface OpportunityRow {
@@ -51,6 +75,12 @@ interface OpportunityRow {
   ruleset_id: string;
   ruleset_version: number;
   rules_snapshot: unknown;
+}
+
+interface ExistingAttemptRow {
+  id: string;
+  submission_fingerprint: string;
+  evaluation_snapshot: unknown;
 }
 
 const corsHeaders = {
@@ -77,6 +107,33 @@ export async function submitApplication(
   dependencies: SubmissionDependencies,
 ): Promise<SubmitApplicationResult> {
   const parsedInput = parseSubmitApplicationInput(input);
+  const submissionIntent: SubmissionIntent = {
+    opportunityId: parsedInput.opportunityId,
+    submissionAttemptId: parsedInput.submissionAttemptId,
+    applicant: parsedInput.applicant,
+    answers: parsedInput.answers,
+    currentApplicationConsent: parsedInput.currentApplicationConsent,
+    futureOpportunityConsent: parsedInput.futureOpportunityConsent,
+  };
+  const submissionFingerprint =
+    await createSubmissionFingerprint(submissionIntent);
+  const existingAttempt = await dependencies.loadExistingAttempt(
+    parsedInput.opportunityId,
+    parsedInput.submissionAttemptId,
+  );
+  if (existingAttempt !== null) {
+    if (existingAttempt.submissionFingerprint !== submissionFingerprint) {
+      throw new SubmissionError(
+        "Submission attempt payload does not match the original application.",
+        409,
+      );
+    }
+
+    return {
+      applicationId: existingAttempt.applicationId,
+      evaluation: existingAttempt.evaluation,
+    };
+  }
 
   if (!isAtLeast19(parsedInput.applicant.birthDate, dependencies.now())) {
     throw new SubmissionError("Applicants must be at least 19 years old.", 422);
@@ -143,22 +200,18 @@ export async function submitApplication(
     rulesSnapshot,
     evaluationSnapshot,
   };
-  const applicationId = await dependencies.persistApplication({
+  const persistenceResult = await dependencies.persistApplication({
     ...persistencePayload,
-    submissionFingerprint:
-      await createSubmissionFingerprint(persistencePayload),
+    submissionFingerprint,
   });
 
-  return {
-    applicationId,
-    evaluation,
-  };
+  return persistenceResult;
 }
 
 export async function createSubmissionFingerprint(
-  command: Omit<ApplicationPersistenceCommand, "submissionFingerprint">,
+  intent: SubmissionIntent,
 ): Promise<string> {
-  const canonical = canonicalJson(command);
+  const canonical = canonicalJson(intent);
   const digest = await crypto.subtle.digest(
     "SHA-256",
     new TextEncoder().encode(canonical),
@@ -241,6 +294,30 @@ export function createSupabaseDependencies(
 ): SubmissionDependencies {
   return {
     now: () => new Date(),
+    async loadExistingAttempt(opportunityId, submissionAttemptId) {
+      const { data, error } = await client
+        .from("applications")
+        .select("id, submission_fingerprint, evaluation_snapshot")
+        .eq("opportunity_id", opportunityId)
+        .eq("submission_attempt_id", submissionAttemptId)
+        .maybeSingle<ExistingAttemptRow>();
+
+      if (error !== null) {
+        throw new Error(`Failed to load submission attempt: ${error.message}`);
+      }
+      if (data === null) {
+        return null;
+      }
+      if (!isEvaluationResult(data.evaluation_snapshot)) {
+        throw new Error("Stored application evaluation is invalid.");
+      }
+
+      return {
+        applicationId: data.id,
+        submissionFingerprint: data.submission_fingerprint,
+        evaluation: data.evaluation_snapshot,
+      };
+    },
     async loadOpportunity(opportunityId) {
       const { data, error } = await client
         .from("opportunities")
@@ -290,11 +367,17 @@ export function createSupabaseDependencies(
       if (error !== null) {
         throw new Error(`Failed to persist application: ${error.message}`);
       }
-      if (typeof data !== "string") {
-        throw new Error("Application persistence returned an invalid ID.");
+      if (
+        typeof data !== "object" ||
+        data === null ||
+        typeof (data as { applicationId?: unknown }).applicationId !==
+          "string" ||
+        !isEvaluationResult((data as { evaluation?: unknown }).evaluation)
+      ) {
+        throw new Error("Application persistence returned an invalid result.");
       }
 
-      return data;
+      return data as ApplicationPersistenceResult;
     },
   };
 }

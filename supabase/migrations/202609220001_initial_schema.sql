@@ -101,7 +101,7 @@ create or replace function public.submit_application_transaction(
   p_rules_snapshot jsonb,
   p_evaluation_snapshot jsonb
 )
-returns uuid
+returns jsonb
 language plpgsql
 security definer
 set search_path = public, pg_catalog
@@ -110,6 +110,7 @@ declare
   target_opportunity public.opportunities%rowtype;
   existing_application_id uuid;
   existing_submission_fingerprint text;
+  existing_evaluation_snapshot jsonb;
   new_application_id uuid;
 begin
   perform pg_advisory_xact_lock(
@@ -119,8 +120,11 @@ begin
     )
   );
 
-  select id, submission_fingerprint
-  into existing_application_id, existing_submission_fingerprint
+  select id, submission_fingerprint, evaluation_snapshot
+  into
+    existing_application_id,
+    existing_submission_fingerprint,
+    existing_evaluation_snapshot
   from public.applications
   where opportunity_id = p_opportunity_id
     and submission_attempt_id = p_submission_attempt_id;
@@ -132,7 +136,10 @@ begin
         message = 'Submission attempt payload does not match the original application.';
     end if;
 
-    return existing_application_id;
+    return jsonb_build_object(
+      'applicationId', existing_application_id,
+      'evaluation', existing_evaluation_snapshot
+    );
   end if;
 
   if p_current_application_consent is not true then
@@ -252,7 +259,10 @@ begin
     (new_application_id, 'current_application', true),
     (new_application_id, 'future_opportunity', p_future_opportunity_consent);
 
-  return new_application_id;
+  return jsonb_build_object(
+    'applicationId', new_application_id,
+    'evaluation', p_evaluation_snapshot
+  );
 end;
 $$;
 

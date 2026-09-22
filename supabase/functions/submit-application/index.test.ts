@@ -5,6 +5,8 @@ import {
   createSubmitApplicationHandler,
   submitApplication,
   type ApplicationPersistenceCommand,
+  type ApplicationPersistenceResult,
+  type ExistingApplicationAttempt,
   type OpportunityForSubmission,
   type SubmissionDependencies,
 } from "./index.ts";
@@ -71,18 +73,36 @@ function createInput(overrides: Record<string, unknown> = {}) {
 function createDependencies(
   opportunity = createOpportunity(),
   currentDate = now,
+  options: {
+    existingAttempt?: ExistingApplicationAttempt | null;
+    persistenceResult?: ApplicationPersistenceResult;
+  } = {},
 ) {
   const persisted: ApplicationPersistenceCommand[] = [];
+  let opportunityLoadCount = 0;
   const dependencies: SubmissionDependencies = {
     now: () => currentDate,
-    loadOpportunity: () => Promise.resolve(opportunity),
+    loadExistingAttempt: () => Promise.resolve(options.existingAttempt ?? null),
+    loadOpportunity: () => {
+      opportunityLoadCount += 1;
+      return Promise.resolve(opportunity);
+    },
     persistApplication: (command) => {
       persisted.push(command);
-      return Promise.resolve(applicationId);
+      return Promise.resolve(
+        options.persistenceResult ?? {
+          applicationId,
+          evaluation: command.evaluationSnapshot,
+        },
+      );
     },
   };
 
-  return { dependencies, persisted };
+  return {
+    dependencies,
+    persisted,
+    getOpportunityLoadCount: () => opportunityLoadCount,
+  };
 }
 
 registerTest("allows Supabase browser preflight headers", async () => {
@@ -351,13 +371,9 @@ registerTest(
       opportunityId: firstCommand.opportunityId,
       submissionAttemptId: firstCommand.submissionAttemptId,
       applicant: firstCommand.applicant,
-      answers: { isAdult: true, isAvailable: true },
+      answers: { isAvailable: true },
       currentApplicationConsent: firstCommand.currentApplicationConsent,
       futureOpportunityConsent: firstCommand.futureOpportunityConsent,
-      rulesetId: firstCommand.rulesetId,
-      rulesetVersion: firstCommand.rulesetVersion,
-      rulesSnapshot: firstCommand.rulesSnapshot,
-      evaluationSnapshot: firstCommand.evaluationSnapshot,
     });
     assertEquals(reorderedFingerprint, firstCommand.submissionFingerprint);
     if (
@@ -368,6 +384,138 @@ registerTest(
         "Expected a changed authoritative payload to change the fingerprint.",
       );
     }
+  },
+);
+
+registerTest(
+  "returns the original receipt after response loss even when the opportunity closes",
+  async () => {
+    // Production break: checking close state before the attempt lookup makes an ambiguous retry lose its committed receipt.
+    const first = createDependencies();
+    const committed = await submitApplication(
+      createInput(),
+      first.dependencies,
+    );
+    const firstCommand = requireFirstCommand(first.persisted);
+    const closedOpportunity = createOpportunity();
+    closedOpportunity.closedAt = "2026-09-22T03:00:00.000Z";
+    const retry = createDependencies(closedOpportunity, now, {
+      existingAttempt: existingAttempt(firstCommand, committed.evaluation),
+    });
+
+    const recovered = await submitApplication(
+      createInput(),
+      retry.dependencies,
+    );
+
+    assertEquals(recovered, committed);
+    assertEquals(retry.getOpportunityLoadCount(), 0);
+    assertEquals(retry.persisted.length, 0);
+  },
+);
+
+registerTest(
+  "returns the original receipt after response loss even when rules change",
+  async () => {
+    // Production break: recomputing a retry against changed rules rejects an application that already committed.
+    const first = createDependencies();
+    const committed = await submitApplication(
+      createInput(),
+      first.dependencies,
+    );
+    const firstCommand = requireFirstCommand(first.persisted);
+    const changedOpportunity = createOpportunity();
+    changedOpportunity.rulesetVersion = 2;
+    changedOpportunity.rules = [
+      {
+        id: "changed-schedule",
+        field: "isAvailable",
+        operator: "equals",
+        expected: false,
+        effect: "hard_fail",
+        reason: "Rules changed after the original application.",
+      },
+    ];
+    const retry = createDependencies(changedOpportunity, now, {
+      existingAttempt: existingAttempt(firstCommand, committed.evaluation),
+    });
+
+    const recovered = await submitApplication(
+      createInput(),
+      retry.dependencies,
+    );
+
+    assertEquals(recovered, committed);
+    assertEquals(retry.getOpportunityLoadCount(), 0);
+    assertEquals(retry.persisted.length, 0);
+  },
+);
+
+registerTest(
+  "rejects changed submission intent before returning an existing receipt",
+  async () => {
+    // Production break: matching only the attempt ID lets changed personal data claim an earlier receipt.
+    const first = createDependencies();
+    const committed = await submitApplication(
+      createInput(),
+      first.dependencies,
+    );
+    const firstCommand = requireFirstCommand(first.persisted);
+    const retry = createDependencies(createOpportunity(), now, {
+      existingAttempt: existingAttempt(firstCommand, committed.evaluation),
+    });
+
+    const changedIntents = [
+      {
+        applicant: {
+          displayName: "Changed applicant",
+          phone: "010-9999-9999",
+          birthDate: "2000-09-22",
+        },
+      },
+      { answers: { isAvailable: false } },
+      { futureOpportunityConsent: true },
+    ];
+    for (const changedIntent of changedIntents) {
+      const error = await expectSubmissionError(
+        () => submitApplication(createInput(changedIntent), retry.dependencies),
+        "Submission attempt payload does not match the original application.",
+      );
+      assertEquals(error.status, 409);
+    }
+
+    assertEquals(retry.getOpportunityLoadCount(), 0);
+    assertEquals(retry.persisted.length, 0);
+  },
+);
+
+registerTest(
+  "returns the stored evaluation when the database deduplicates a concurrent retry",
+  async () => {
+    // Production break: returning the request-time evaluation after an insert race can disagree with the committed receipt.
+    const storedEvaluation = {
+      rulesetId: "hair-promotion",
+      rulesetVersion: 1,
+      eligible: true,
+      failures: [],
+      reviews: [],
+      reminders: [
+        {
+          ruleId: "stored-reminder",
+          reason: "Stored evaluation from the winning transaction.",
+          effect: "reminder" as const,
+          input: true,
+        },
+      ],
+    };
+    const test = createDependencies(createOpportunity(), now, {
+      persistenceResult: { applicationId, evaluation: storedEvaluation },
+    });
+
+    const result = await submitApplication(createInput(), test.dependencies);
+
+    assertEquals(result, { applicationId, evaluation: storedEvaluation });
+    assertEquals(test.persisted.length, 1);
   },
 );
 
@@ -403,6 +551,27 @@ function assertMatches(value: unknown, pattern: RegExp, label: string): void {
       `Expected ${label} to match ${pattern}, received ${String(value)}.`,
     );
   }
+}
+
+function requireFirstCommand(
+  persisted: ApplicationPersistenceCommand[],
+): ApplicationPersistenceCommand {
+  const command = persisted[0];
+  if (command === undefined) {
+    throw new Error("Expected a persisted application command.");
+  }
+  return command;
+}
+
+function existingAttempt(
+  command: ApplicationPersistenceCommand,
+  evaluation: ApplicationPersistenceResult["evaluation"],
+): ExistingApplicationAttempt {
+  return {
+    applicationId,
+    submissionFingerprint: command.submissionFingerprint,
+    evaluation,
+  };
 }
 
 async function expectSubmissionError(

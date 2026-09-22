@@ -214,9 +214,9 @@ values (
   '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]'
 );
 
-create temporary table submitted_application_ids (id uuid not null);
+create temporary table submitted_application_results (result jsonb not null);
 
-insert into submitted_application_ids (id)
+insert into submitted_application_results (result)
 select public.submit_application_transaction(
   '00000000-0000-0000-0000-000000000003',
   '00000000-0000-4000-8000-000000000030',
@@ -233,80 +233,9 @@ select public.submit_application_transaction(
   '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
 );
 
-select is(
-  public.submit_application_transaction(
-    '00000000-0000-0000-0000-000000000003',
-    '00000000-0000-4000-8000-000000000030',
-    repeat('c', 64),
-    'Snapshot applicant',
-    '010-0000-0003',
-    '2000-01-01',
-    '{"isAdult":true,"isAvailable":true}',
-    true,
-    false,
-    'hair-promotion',
-    1,
-    '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]',
-    '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
-  ),
-  (select id from submitted_application_ids),
-  'an exact retry returns the original application ID'
-);
-
-select is(
-  (
-    select count(*)::bigint
-    from public.applications
-    join submitted_application_ids on submitted_application_ids.id = applications.id
-  ),
-  1::bigint,
-  'an exact retry leaves one application'
-);
-
-select is(
-  (
-    select count(*)::bigint
-    from public.application_answers
-    join submitted_application_ids
-      on submitted_application_ids.id = application_answers.application_id
-  ),
-  2::bigint,
-  'an exact retry leaves one answer set'
-);
-
-select is(
-  (
-    select count(*)::bigint
-    from public.consent_events
-    join submitted_application_ids
-      on submitted_application_ids.id = consent_events.application_id
-  ),
-  2::bigint,
-  'an exact retry leaves one consent set'
-);
-
-select throws_ok(
-  $$
-    select public.submit_application_transaction(
-      '00000000-0000-0000-0000-000000000003',
-      '00000000-0000-4000-8000-000000000030',
-      repeat('d', 64),
-      'Changed applicant',
-      '010-9999-9999',
-      '2000-01-01',
-      '{"isAdult":true,"isAvailable":true}',
-      true,
-      false,
-      'hair-promotion',
-      1,
-      '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]',
-      '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
-    )
-  $$,
-  '22023',
-  'Submission attempt payload does not match the original application.',
-  'a changed payload cannot reuse a submission attempt ID'
-);
+create temporary table submitted_application_ids as
+select (result ->> 'applicationId')::uuid as id
+from submitted_application_results;
 
 update public.opportunities
 set
@@ -445,6 +374,81 @@ select throws_ok(
 update public.opportunities
 set closed_at = now()
 where id = '00000000-0000-0000-0000-000000000003';
+
+select is(
+  public.submit_application_transaction(
+    '00000000-0000-0000-0000-000000000003',
+    '00000000-0000-4000-8000-000000000030',
+    repeat('c', 64),
+    'Snapshot applicant',
+    '010-0000-0003',
+    '2000-01-01',
+    '{"isAdult":true,"isAvailable":true}',
+    true,
+    false,
+    'hair-promotion',
+    1,
+    '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]',
+    '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+  ),
+  (select result from submitted_application_results),
+  'an exact retry after rules mutation and closure returns the stored application result'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.applications
+    join submitted_application_ids on submitted_application_ids.id = applications.id
+  ),
+  1::bigint,
+  'an exact retry leaves one application'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.application_answers
+    join submitted_application_ids
+      on submitted_application_ids.id = application_answers.application_id
+  ),
+  2::bigint,
+  'an exact retry leaves one answer set'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.consent_events
+    join submitted_application_ids
+      on submitted_application_ids.id = consent_events.application_id
+  ),
+  2::bigint,
+  'an exact retry leaves one consent set'
+);
+
+select throws_ok(
+  $$
+    select public.submit_application_transaction(
+      '00000000-0000-0000-0000-000000000003',
+      '00000000-0000-4000-8000-000000000030',
+      repeat('d', 64),
+      'Changed applicant',
+      '010-9999-9999',
+      '2000-01-01',
+      '{"isAdult":true,"isAvailable":true}',
+      true,
+      false,
+      'hair-promotion',
+      1,
+      '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]',
+      '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+    )
+  $$,
+  '22023',
+  'Submission attempt payload does not match the original application.',
+  'a changed payload cannot reuse a submission attempt ID'
+);
 
 select throws_ok(
   $$

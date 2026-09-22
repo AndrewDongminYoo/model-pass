@@ -28,3 +28,6 @@ policy = "per_worker"
 
 [functions.submit-application]
 verify_jwt = false
+
+[functions.get-public-opportunity]
+verify_jwt = false

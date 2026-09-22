@@ -814,18 +814,29 @@ export function createSupabaseDependencies(
       }
     },
     async finalizeUpload(metadata, tuple) {
-      const { data, error } = await client.rpc("finalize_application_photo", {
-        p_photo_id: metadata.id,
-        p_application_id: metadata.applicationId,
-        p_opportunity_id: tuple.opportunityId,
-        p_submission_attempt_id: tuple.submissionAttemptId,
-        p_storage_path: metadata.storagePath,
-        p_content_type: metadata.contentType,
-        p_byte_size: metadata.byteSize,
-      });
+      const { data, error, status } = await client.rpc(
+        "finalize_application_photo",
+        {
+          p_photo_id: metadata.id,
+          p_application_id: metadata.applicationId,
+          p_opportunity_id: tuple.opportunityId,
+          p_submission_attempt_id: tuple.submissionAttemptId,
+          p_storage_path: metadata.storagePath,
+          p_content_type: metadata.contentType,
+          p_byte_size: metadata.byteSize,
+        },
+      );
       if (error !== null) {
-        throw new PhotoFinalizationRejectedError(
-          `Failed to finalize photo upload: ${error.message}`,
+        const errorCode = typeof error.code === "string"
+          ? error.code.trim()
+          : "";
+        if (status >= 400 && status < 500 && errorCode.length > 0) {
+          throw new PhotoFinalizationRejectedError(
+            `Failed to finalize photo upload: ${error.message}`,
+          );
+        }
+        throw new Error(
+          `Photo finalization outcome is ambiguous: ${error.message}`,
         );
       }
       if (

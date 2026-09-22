@@ -156,9 +156,9 @@ registerTest(
 );
 
 registerTest(
-  "classifies only returned RPC database errors as known rollbacks",
+  "classifies only coded 4xx RPC errors as known rollbacks",
   async () => {
-    // Production break: transport and malformed-success failures have unknown commit status and must not be compensatable rejections.
+    // Production break: PostgREST resolves fetch failures with status 0, so error presence alone cannot prove rollback.
     const metadata: PhotoMetadata = {
       id: photoId,
       applicationId,
@@ -167,28 +167,141 @@ registerTest(
       byteSize: 3,
       expiresAt: "2026-10-30T03:00:00.000Z",
     };
-    const rejected = createSupabaseDependencies(
-      {
-        rpc: () =>
-          Promise.resolve({ data: null, error: { message: "rolled back" } }),
-      } as never,
-      "test-signing-secret-with-sufficient-length",
-    );
-    const rejection = await captureError(() =>
-      rejected.finalizeUpload(metadata, validGrantRequest()),
-    );
-    assert(rejection instanceof PhotoFinalizationRejectedError);
+    for (const { code, status } of [
+      { code: "22023", status: 400 },
+      { code: "P0002", status: 404 },
+      { code: "23505", status: 409 },
+    ]) {
+      const rejected = createSupabaseDependencies(
+        {
+          rpc: () =>
+            Promise.resolve({
+              data: null,
+              error: { message: "rolled back", code },
+              status,
+            }),
+        } as never,
+        "test-signing-secret-with-sufficient-length",
+      );
+      const rejection = await captureError(() =>
+        rejected.finalizeUpload(metadata, validGrantRequest()),
+      );
+      assert(rejection instanceof PhotoFinalizationRejectedError);
+    }
 
-    const malformed = createSupabaseDependencies(
+    for (const response of [
       {
-        rpc: () => Promise.resolve({ data: { applicationId }, error: null }),
+        data: null,
+        error: { message: "fetch failed", code: "" },
+        status: 0,
+      },
+      {
+        data: null,
+        error: { message: "bad gateway", code: "PGRST000" },
+        status: 502,
+      },
+      {
+        data: null,
+        error: { message: "uncoded rejection", code: "" },
+        status: 400,
+      },
+      {
+        data: null,
+        error: { message: "missing error code" },
+        status: 400,
+      },
+      {
+        data: { applicationId },
+        error: null,
+        status: 200,
+      },
+    ]) {
+      const ambiguous = createSupabaseDependencies(
+        { rpc: () => Promise.resolve(response) } as never,
+        "test-signing-secret-with-sufficient-length",
+      );
+      const ambiguity = await captureError(() =>
+        ambiguous.finalizeUpload(metadata, validGrantRequest()),
+      );
+      assert(!(ambiguity instanceof PhotoFinalizationRejectedError));
+    }
+  },
+);
+
+registerTest(
+  "retries a status-zero RPC outcome and returns its exact committed result",
+  async () => {
+    // Production break: compensating a status-zero fetch failure can delete a photo committed by the unreachable response.
+    const fixture = createFixture();
+    let rpcCalls = 0;
+    const responses = [
+      {
+        data: null,
+        error: { message: "fetch failed", code: "" },
+        status: 0,
+      },
+      {
+        data: { applicationId, photoId, submissionState: "submitted" },
+        error: null,
+        status: 200,
+      },
+    ];
+    const adapter = createSupabaseDependencies(
+      {
+        rpc: () => Promise.resolve(responses[rpcCalls++]),
       } as never,
       "test-signing-secret-with-sufficient-length",
     );
-    const ambiguity = await captureError(() =>
-      malformed.finalizeUpload(metadata, validGrantRequest()),
+    fixture.dependencies.finalizeUpload = adapter.finalizeUpload;
+    const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+    const grant = (await readJson(
+      await issueGrant(handler, validGrantRequest()),
+    )) as { uploadUrl: string; storagePath: string };
+
+    const response = await upload(handler, grant, bytes(3), "image/jpeg");
+
+    assertEquals(response.status, 201);
+    assertEquals(rpcCalls, 2);
+    assertEquals(fixture.removals, []);
+  },
+);
+
+registerTest(
+  "retains storage when both adapter RPC outcomes are ambiguous",
+  async () => {
+    // Production break: status-zero and gateway responses do not establish whether the transaction committed.
+    const fixture = createFixture();
+    let rpcCalls = 0;
+    const responses = [
+      {
+        data: null,
+        error: { message: "fetch failed", code: "" },
+        status: 0,
+      },
+      {
+        data: null,
+        error: { message: "bad gateway", code: "PGRST000" },
+        status: 502,
+      },
+    ];
+    const adapter = createSupabaseDependencies(
+      {
+        rpc: () => Promise.resolve(responses[rpcCalls++]),
+      } as never,
+      "test-signing-secret-with-sufficient-length",
     );
-    assert(!(ambiguity instanceof PhotoFinalizationRejectedError));
+    fixture.dependencies.finalizeUpload = adapter.finalizeUpload;
+    const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+    const grant = (await readJson(
+      await issueGrant(handler, validGrantRequest()),
+    )) as { uploadUrl: string; storagePath: string };
+
+    const response = await upload(handler, grant, bytes(3), "image/jpeg");
+
+    assertEquals(response.status, 500);
+    assertEquals(rpcCalls, 2);
+    assertEquals(fixture.removals, []);
+    assertEquals(fixture.reservations, [expectedPath()]);
   },
 );
 

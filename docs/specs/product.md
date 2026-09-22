@@ -4,7 +4,9 @@
 
 Working title: Model Pass.
 Product direction approved in conversation on 2026-09-22.
-This document describes the standalone web pilot and the intended later role of Apps in Toss.
+This document describes the web application and a proposed Apps in Toss distribution path.
+The interface defaults to Korean and supports switching all application screens to English, with the choice retained across visits.
+On 2026-09-23, the operator prioritized Apps in Toss preparation; the existing service pre-review and legal gates still apply before platform integration or launch.
 
 ## Product Thesis
 
@@ -174,7 +176,8 @@ Primary references checked on 2026-09-22:
 An external application link must not be assumed to comply with Danggeun policy until a current written response or directly applicable policy text confirms the intended flow.
 The product must still function when the recruiter copies applicant answers manually.
 
-Apps in Toss is a phase-two distribution channel, primarily for applicant discovery and repeat participation.
+Apps in Toss is the preferred distribution target, primarily for applicant discovery and repeat participation.
+The standalone web routes remain a development and direct-link surface while the miniapp has not been registered.
 Its current official documentation supports WebView applications and states that the service is for users aged 19 or older, but this product's recruitment and opportunity-information use case requires service pre-review before integration work begins.
 
 Apps in Toss references checked on 2026-09-22:
@@ -210,6 +213,6 @@ If price is the repeated rejection reason at KRW 29,000, test KRW 19,000 as the 
 - Medical or cosmetic diagnosis.
 - AI analysis of physical attractiveness or protected traits.
 - Native iOS or Android applications.
-- Apps in Toss integration before standalone pilot evidence and platform pre-review.
+- Apps in Toss integration before platform service pre-review and legal classification review.
 - Subscriptions before repeat usage is observed.
 - DeepL before multilingual demand is observed.

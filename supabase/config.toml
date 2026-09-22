@@ -31,3 +31,9 @@ verify_jwt = false
 
 [functions.get-public-opportunity]
 verify_jwt = false
+
+[functions.create-photo-upload]
+verify_jwt = false
+
+[functions.create-photo-view]
+verify_jwt = true

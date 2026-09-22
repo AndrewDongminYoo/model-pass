@@ -9,6 +9,7 @@ import {
   ApplicationSubmissionError,
   submitApplication,
 } from "../api/submit-application";
+import { uploadApplicationPhoto } from "../api/application-photos";
 import { EligibilityForm } from "./EligibilityForm";
 import { EligibilityResult } from "./EligibilityResult";
 
@@ -49,6 +50,10 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   const [submitError, setSubmitError] = useState<string>();
   const [pending, setPending] = useState(false);
   const [receiptId, setReceiptId] = useState<string>();
+  const [photo, setPhoto] = useState<File>();
+  const [photoError, setPhotoError] = useState<string>();
+  const [photoPending, setPhotoPending] = useState(false);
+  const [photoUploaded, setPhotoUploaded] = useState(false);
   const submittingRef = useRef(false);
 
   if (receiptId !== undefined) {
@@ -57,8 +62,53 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         <h2 id="application-received-heading">Application received</h2>
         <p>Receipt: {receiptId}</p>
         <p>Keep this private receipt for your records.</p>
+        <div>
+          <label htmlFor="job-specific-photo">Job-specific photo</label>
+          <input
+            id="job-specific-photo"
+            type="file"
+            accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
+            disabled={photoPending || photoUploaded}
+            onChange={(event) => {
+              setPhoto(event.currentTarget.files?.[0]);
+              setPhotoError(undefined);
+              setPhotoUploaded(false);
+            }}
+          />
+          <p>JPEG, PNG, HEIC, or HEIF. Maximum 10 MiB.</p>
+          <button
+            type="button"
+            disabled={photo === undefined || photoPending || photoUploaded}
+            onClick={() => void handlePhotoUpload(receiptId)}
+          >
+            {photoPending ? "Uploading photo" : "Upload photo"}
+          </button>
+          {photoError ? <p role="alert">{photoError}</p> : null}
+          {photoUploaded ? <p>Photo uploaded privately.</p> : null}
+        </div>
       </section>
     );
+  }
+
+  async function handlePhotoUpload(applicationId: string) {
+    if (photo === undefined || photoPending) {
+      return;
+    }
+    setPhotoPending(true);
+    setPhotoError(undefined);
+    try {
+      await uploadApplicationPhoto({
+        applicationId,
+        opportunityId: opportunity.id,
+        submissionAttemptId,
+        file: photo,
+      });
+      setPhotoUploaded(true);
+    } catch {
+      setPhotoError("Could not upload the photo. Try again.");
+    } finally {
+      setPhotoPending(false);
+    }
   }
 
   function changeAnswers(nextAnswers: Record<string, AnswerValue>) {

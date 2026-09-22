@@ -1,0 +1,230 @@
+import { getSupabaseClient } from "../../../lib/supabase/client";
+import type {
+  AnswerValue,
+  EvaluationResult,
+} from "../../eligibility/domain/types";
+import { isEvaluationResult } from "../domain/application";
+
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const ALLOWED_CONTENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/heic",
+  "image/heif",
+]);
+
+export interface RecruiterApplication {
+  id: string;
+  createdAt: string;
+  applicantDisplayName: string;
+  applicantPhone: string;
+  evaluation: EvaluationResult;
+  answers: Array<{ field: string; value: AnswerValue }>;
+  photos: Array<{ id: string; contentType: string; byteSize: number }>;
+  attendance: Array<{
+    id: string;
+    party: "recruiter" | "applicant";
+    eventType: "completed" | "cancelled" | "no_show" | "disputed" | "resolved";
+    occurredAt: string;
+  }>;
+}
+
+interface RecruiterApplicationRow {
+  id: string;
+  created_at: string;
+  applicant_display_name: string;
+  applicant_phone: string;
+  evaluation_snapshot: unknown;
+  application_answers: Array<{ field: string; value: unknown }>;
+  application_photos: Array<{
+    id: string;
+    content_type: string;
+    byte_size: number;
+  }>;
+  attendance_events: Array<{
+    id: string;
+    party: string;
+    event_type: string;
+    occurred_at: string;
+  }>;
+}
+
+export async function uploadApplicationPhoto(input: {
+  applicationId: string;
+  opportunityId: string;
+  submissionAttemptId: string;
+  file: File;
+}): Promise<{ photoId: string }> {
+  validatePhoto(input.file);
+  const { data, error } = await getSupabaseClient().functions.invoke(
+    "create-photo-upload",
+    {
+      body: {
+        applicationId: input.applicationId,
+        opportunityId: input.opportunityId,
+        submissionAttemptId: input.submissionAttemptId,
+        contentType: input.file.type,
+        byteSize: input.file.size,
+      },
+    },
+  );
+  if (error !== null) {
+    throw error;
+  }
+  if (!isUploadGrant(data)) {
+    throw new Error("The photo upload grant is invalid.");
+  }
+
+  const response = await fetch(data.uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": input.file.type,
+      "X-Photo-Storage-Path": data.storagePath,
+    },
+    body: input.file,
+  });
+  if (!response.ok) {
+    throw new Error("The photo upload failed.");
+  }
+  const result: unknown = await response.json();
+  if (!isPhotoUploadResult(result)) {
+    throw new Error("The photo upload response is invalid.");
+  }
+  return result;
+}
+
+export async function createPhotoViewUrl(
+  applicationId: string,
+  photoId: string,
+): Promise<string> {
+  const { data, error } = await getSupabaseClient().functions.invoke(
+    "create-photo-view",
+    { body: { applicationId, photoId } },
+  );
+  if (error !== null) {
+    throw error;
+  }
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    typeof (data as { viewUrl?: unknown }).viewUrl !== "string" ||
+    (data as { expiresIn?: unknown }).expiresIn !== 600
+  ) {
+    throw new Error("The photo view response is invalid.");
+  }
+  return (data as { viewUrl: string }).viewUrl;
+}
+
+export async function getRecruiterApplications(
+  opportunityId: string,
+): Promise<RecruiterApplication[]> {
+  const { data, error } = await getSupabaseClient()
+    .from("applications")
+    .select(
+      "id, created_at, applicant_display_name, applicant_phone, evaluation_snapshot, application_answers(field, value), application_photos(id, content_type, byte_size), attendance_events(id, party, event_type, occurred_at)",
+    )
+    .eq("opportunity_id", opportunityId)
+    .order("created_at", { ascending: true });
+  if (error !== null) {
+    throw new Error(`Could not load applications: ${error.message}`);
+  }
+
+  return (data as RecruiterApplicationRow[]).map(parseRecruiterApplication);
+}
+
+function validatePhoto(file: File): void {
+  if (!ALLOWED_CONTENT_TYPES.has(file.type)) {
+    throw new Error("Choose a JPEG, PNG, HEIC, or HEIF photo.");
+  }
+  if (file.size <= 0 || file.size > MAX_PHOTO_BYTES) {
+    throw new Error("Choose a photo no larger than 10 MiB.");
+  }
+}
+
+function isUploadGrant(value: unknown): value is {
+  uploadUrl: string;
+  storagePath: string;
+  expiresAt: string;
+} {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const grant = value as Record<string, unknown>;
+  return (
+    typeof grant.uploadUrl === "string" &&
+    typeof grant.storagePath === "string" &&
+    typeof grant.expiresAt === "string"
+  );
+}
+
+function isPhotoUploadResult(value: unknown): value is { photoId: string } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { photoId?: unknown }).photoId === "string"
+  );
+}
+
+function parseRecruiterApplication(
+  row: RecruiterApplicationRow,
+): RecruiterApplication {
+  if (!isEvaluationResult(row.evaluation_snapshot)) {
+    throw new Error("An application has invalid evaluation evidence.");
+  }
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    applicantDisplayName: row.applicant_display_name,
+    applicantPhone: row.applicant_phone,
+    evaluation: row.evaluation_snapshot,
+    answers: row.application_answers.map((answer) => ({
+      field: answer.field,
+      value: parseAnswerValue(answer.value),
+    })),
+    photos: row.application_photos.map((photo) => ({
+      id: photo.id,
+      contentType: photo.content_type,
+      byteSize: photo.byte_size,
+    })),
+    attendance: row.attendance_events.map((event) => ({
+      id: event.id,
+      party: parseParty(event.party),
+      eventType: parseEventType(event.event_type),
+      occurredAt: event.occurred_at,
+    })),
+  };
+}
+
+function parseAnswerValue(value: unknown): AnswerValue {
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean"
+  ) {
+    return value;
+  }
+  throw new Error("An application answer is invalid.");
+}
+
+function parseParty(value: string): "recruiter" | "applicant" {
+  if (value === "recruiter" || value === "applicant") {
+    return value;
+  }
+  throw new Error("An attendance party is invalid.");
+}
+
+function parseEventType(
+  value: string,
+): "completed" | "cancelled" | "no_show" | "disputed" | "resolved" {
+  if (
+    value === "completed" ||
+    value === "cancelled" ||
+    value === "no_show" ||
+    value === "disputed" ||
+    value === "resolved"
+  ) {
+    return value;
+  }
+  throw new Error("An attendance event is invalid.");
+}

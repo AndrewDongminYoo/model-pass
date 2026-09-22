@@ -2,7 +2,36 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(33);
+select plan(36);
+
+select is(
+  (select public from storage.buckets where id = 'application-photos'),
+  false,
+  'application photo bucket is private'
+);
+
+select ok(
+  (
+    select file_size_limit = 10485760
+      and allowed_mime_types @> array['image/jpeg', 'image/png', 'image/heic', 'image/heif']
+      and cardinality(allowed_mime_types) = 4
+    from storage.buckets
+    where id = 'application-photos'
+  ),
+  'application photo bucket limits uploads to approved MIME types and 10 MiB'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from pg_policies
+    where schemaname = 'storage'
+      and tablename = 'objects'
+      and ('anon' = any(roles) or 'public' = any(roles))
+  ),
+  0::bigint,
+  'storage objects have no anonymous or public policy'
+);
 
 insert into auth.users (id, aud, role, email, encrypted_password)
 values
@@ -132,16 +161,29 @@ values
   ('00000000-0000-0000-0000-000000000011', 'isAvailable', 'true'),
   ('00000000-0000-0000-0000-000000000012', 'isAvailable', 'true');
 
-insert into public.application_photos (application_id, storage_path, expires_at)
+insert into public.application_photos (
+  id,
+  application_id,
+  storage_path,
+  content_type,
+  byte_size,
+  expires_at
+)
 values
   (
+    '00000000-0000-4000-8000-000000000021',
     '00000000-0000-0000-0000-000000000011',
-    'applications/11/photo.jpg',
+    'opportunity/00000000-0000-0000-0000-000000000001/application/00000000-0000-0000-0000-000000000011/00000000-0000-4000-8000-000000000021',
+    'image/jpeg',
+    3,
     '2099-10-22T03:00:00Z'
   ),
   (
+    '00000000-0000-4000-8000-000000000022',
     '00000000-0000-0000-0000-000000000012',
-    'applications/12/photo.jpg',
+    'opportunity/00000000-0000-0000-0000-000000000002/application/00000000-0000-0000-0000-000000000012/00000000-0000-4000-8000-000000000022',
+    'image/heic',
+    4,
     '2099-10-22T03:00:00Z'
   );
 
@@ -613,10 +655,18 @@ select throws_ok(
 
 select throws_ok(
   $$
-    insert into public.application_photos (application_id, storage_path, expires_at)
+    insert into public.application_photos (
+      application_id,
+      storage_path,
+      content_type,
+      byte_size,
+      expires_at
+    )
     values (
       '00000000-0000-0000-0000-000000000011',
-      'applications/11/direct.jpg',
+      'opportunity/00000000-0000-0000-0000-000000000001/application/00000000-0000-0000-0000-000000000011/00000000-0000-4000-8000-000000000023',
+      'image/png',
+      5,
       '2099-10-22T03:00:00Z'
     )
   $$,

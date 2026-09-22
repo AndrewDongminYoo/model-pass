@@ -1,0 +1,71 @@
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import {
+  getRecruiterApplications,
+  type RecruiterApplication,
+} from "../../applications/api/application-photos";
+import { ApplicationCard } from "../components/ApplicationCard";
+
+export function ApplicationsPage() {
+  const { opportunityId } = useParams<{ opportunityId: string }>();
+  const [result, setResult] = useState<{
+    opportunityId: string;
+    applications?: RecruiterApplication[];
+    error?: string;
+  }>();
+
+  useEffect(() => {
+    let active = true;
+    if (opportunityId === undefined) {
+      return () => {
+        active = false;
+      };
+    }
+
+    void getRecruiterApplications(opportunityId)
+      .then((loaded) => {
+        if (active) {
+          setResult({
+            opportunityId,
+            applications: [...loaded].sort((left, right) =>
+              left.createdAt.localeCompare(right.createdAt),
+            ),
+          });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setResult({
+            opportunityId,
+            error: "Could not load applications.",
+          });
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [opportunityId]);
+
+  const currentResult =
+    result?.opportunityId === opportunityId ? result : undefined;
+  const error =
+    opportunityId === undefined
+      ? "This opportunity is unavailable."
+      : currentResult?.error;
+  const applications = currentResult?.applications;
+
+  return (
+    <main>
+      <h1>Applications</h1>
+      {error ? <p role="alert">{error}</p> : null}
+      {applications === undefined && error === undefined ? (
+        <p role="status">Loading applications</p>
+      ) : null}
+      {applications?.length === 0 ? <p>No applications yet.</p> : null}
+      {applications?.map((application) => (
+        <ApplicationCard key={application.id} application={application} />
+      ))}
+    </main>
+  );
+}

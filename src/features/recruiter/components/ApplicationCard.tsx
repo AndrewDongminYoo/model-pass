@@ -3,6 +3,7 @@ import {
   createPhotoViewUrl,
   type RecruiterApplication,
 } from "../../applications/api/application-photos";
+import { AttendanceSummary } from "../../attendance/components/AttendanceSummary";
 
 interface ApplicationCardProps {
   application: RecruiterApplication;
@@ -102,20 +103,10 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
           );
         })}
       </section>
-      <section aria-label="Attendance history">
-        <h3>Attendance history</h3>
-        {application.attendance.length === 0 ? (
-          <p>No attendance events.</p>
-        ) : (
-          <ul>
-            {application.attendance.map((event) => (
-              <li key={event.id}>
-                {event.party}: {event.eventType}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <AttendanceSummary
+        events={application.attendance}
+        viewerParty="recruiter"
+      />
     </article>
   );
 }

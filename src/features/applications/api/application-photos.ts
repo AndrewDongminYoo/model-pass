@@ -4,6 +4,11 @@ import type {
   EvaluationResult,
 } from "../../eligibility/domain/types";
 import { isEvaluationResult } from "../domain/application";
+import type {
+  AttendanceEvent,
+  AttendanceEventType,
+  AttendanceResolution,
+} from "../../attendance/domain/attendance";
 
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 const ALLOWED_CONTENT_TYPES = new Set([
@@ -28,12 +33,7 @@ export interface RecruiterApplication {
   evaluation: EvaluationResult;
   answers: Array<{ field: string; value: AnswerValue }>;
   photos: Array<{ id: string; contentType: string; byteSize: number }>;
-  attendance: Array<{
-    id: string;
-    party: "recruiter" | "applicant";
-    eventType: "completed" | "cancelled" | "no_show" | "disputed" | "resolved";
-    occurredAt: string;
-  }>;
+  attendance: AttendanceEvent[];
 }
 
 interface RecruiterApplicationRow {
@@ -53,6 +53,8 @@ interface RecruiterApplicationRow {
     party: string;
     event_type: string;
     occurred_at: string;
+    related_event_id: string | null;
+    resolution: string | null;
   }>;
 }
 
@@ -162,7 +164,7 @@ export async function getRecruiterApplications(
   const { data, error } = await client
     .from("applications")
     .select(
-      "id, created_at, applicant_display_name, applicant_phone, evaluation_snapshot, application_answers(field, value), application_photos(id, content_type, byte_size), attendance_events(id, party, event_type, occurred_at)",
+      "id, created_at, applicant_display_name, applicant_phone, evaluation_snapshot, application_answers(field, value), application_photos(id, content_type, byte_size), attendance_events(id, party, event_type, occurred_at, related_event_id, resolution)",
     )
     .eq("opportunity_id", opportunityId)
     .eq("submission_state", "submitted")
@@ -267,12 +269,24 @@ function parseRecruiterApplication(
       contentType: photo.content_type,
       byteSize: photo.byte_size,
     })),
-    attendance: row.attendance_events.map((event) => ({
-      id: event.id,
-      party: parseParty(event.party),
-      eventType: parseEventType(event.event_type),
-      occurredAt: event.occurred_at,
-    })),
+    attendance: row.attendance_events
+      .map((event) => ({
+        id: event.id,
+        party: parseParty(event.party),
+        eventType: parseEventType(event.event_type),
+        occurredAt: event.occurred_at,
+        ...(event.related_event_id === null
+          ? {}
+          : { relatedEventId: event.related_event_id }),
+        ...(event.resolution === null
+          ? {}
+          : { resolution: parseResolution(event.resolution) }),
+      }))
+      .sort(
+        (left, right) =>
+          left.occurredAt.localeCompare(right.occurredAt) ||
+          left.id.localeCompare(right.id),
+      ),
   };
 }
 
@@ -295,17 +309,24 @@ function parseParty(value: string): "recruiter" | "applicant" {
   throw new Error("An attendance party is invalid.");
 }
 
-function parseEventType(
-  value: string,
-): "completed" | "cancelled" | "no_show" | "disputed" | "resolved" {
-  if (
-    value === "completed" ||
-    value === "cancelled" ||
-    value === "no_show" ||
-    value === "disputed" ||
-    value === "resolved"
-  ) {
-    return value;
-  }
+function parseEventType(value: string): AttendanceEventType {
+  const eventTypes = new Set<AttendanceEventType>([
+    "recruiter_confirmed",
+    "applicant_confirmed",
+    "completed",
+    "recruiter_cancelled",
+    "applicant_cancelled",
+    "recruiter_no_show",
+    "applicant_no_show",
+    "dispute_opened",
+    "dispute_resolved",
+  ]);
+  if (eventTypes.has(value as AttendanceEventType))
+    return value as AttendanceEventType;
   throw new Error("An attendance event is invalid.");
+}
+
+function parseResolution(value: string): AttendanceResolution {
+  if (value === "confirmed" || value === "rejected") return value;
+  throw new Error("An attendance resolution is invalid.");
 }

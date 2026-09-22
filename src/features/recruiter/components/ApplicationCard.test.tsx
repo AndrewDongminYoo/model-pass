@@ -316,7 +316,12 @@ it("renders deterministic evidence, private photos, and factual attendance witho
     ),
   ).toBeVisible();
   expect(screen.getByText("isAvailable: true")).toBeVisible();
-  expect(screen.getByText("applicant: completed")).toBeVisible();
+  expect(
+    within(screen.getByRole("group", { name: "Applicant facts" })).getByText(
+      "Completed: 1",
+    ),
+  ).toBeVisible();
+  expect(screen.getByText("2026-09-22T04:00:00.000Z")).toBeVisible();
   expect(
     screen.queryByText(/rank|attractiveness|AI score|inferred fit/i),
   ).not.toBeInTheDocument();

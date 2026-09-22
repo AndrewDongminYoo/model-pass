@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(52);
+select plan(84);
 
 select is(
   (select public from storage.buckets where id = 'application-photos'),
@@ -60,12 +60,13 @@ select is(
       'public.application_answers'::regclass,
       'public.application_photos'::regclass,
       'public.application_photo_upload_reservations'::regclass,
+      'public.retention_holds'::regclass,
       'public.attendance_events'::regclass,
       'public.consent_events'::regclass
     )
       and relrowsecurity
   ),
-  7::bigint,
+  8::bigint,
   'RLS is enabled on every user-owned table'
 );
 
@@ -94,6 +95,21 @@ select ok(
     'SELECT, INSERT, UPDATE, DELETE'
   ),
   'service role owns reservation reconciliation privileges'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.retention_holds', 'SELECT'),
+  'authenticated users have no retention-hold read privilege'
+);
+
+select ok(
+  not has_table_privilege('anon', 'public.retention_holds', 'SELECT'),
+  'anonymous users have no retention-hold read privilege'
+);
+
+select ok(
+  has_table_privilege('service_role', 'public.retention_holds', 'SELECT, INSERT, UPDATE'),
+  'service role owns retention-hold lifecycle privileges'
 );
 
 insert into public.opportunities (
@@ -240,7 +256,7 @@ values
   (
     '00000000-0000-0000-0000-000000000011',
     '10000000-0000-4000-8000-000000000001',
-    'applicant',
+    'recruiter',
     'completed'
   ),
   (
@@ -1031,6 +1047,454 @@ select is(
 );
 
 reset role;
+
+insert into public.applications (
+  id,
+  opportunity_id,
+  submission_attempt_id,
+  submission_fingerprint,
+  applicant_display_name,
+  applicant_phone,
+  applicant_birth_date,
+  ruleset_id,
+  ruleset_version,
+  rules_snapshot,
+  evaluation_snapshot
+)
+values (
+  '00000000-0000-0000-0000-000000000014',
+  '00000000-0000-0000-0000-000000000001',
+  '00000000-0000-4000-8000-000000000014',
+  repeat('e', 64),
+  'Pending attendance applicant',
+  '010-0000-0014',
+  '2000-01-01',
+  'hair-promotion',
+  1,
+  '[{"id":"photo-required","field":"requestedPhoto","effect":"needs_review"}]',
+  '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[{"ruleId":"photo-required","effect":"needs_review"}],"reminders":[]}'
+);
+
+select throws_ok(
+  $$
+    select public.record_attendance_event(
+      '00000000-0000-0000-0000-000000000014',
+      'applicant',
+      null,
+      'applicant_confirmed',
+      'applicant',
+      null,
+      null,
+      null
+    )
+  $$,
+  '22023',
+  'Attendance cannot be recorded for a pending-photo application.',
+  'pending-photo applications are not valid attendance targets'
+);
+
+select is(
+  public.record_attendance_event(
+    '00000000-0000-0000-0000-000000000011',
+    'recruiter',
+    '10000000-0000-4000-8000-000000000001',
+    'recruiter_confirmed',
+    'recruiter',
+    null,
+    null,
+    '2099-09-23T02:00:00Z'
+  ) ->> 'eventType',
+  'recruiter_confirmed',
+  'recruiter records its own confirmation'
+);
+
+select throws_ok(
+  $$
+    select public.record_attendance_event(
+      '00000000-0000-0000-0000-000000000011',
+      'recruiter',
+      '10000000-0000-4000-8000-000000000001',
+      'applicant_cancelled',
+      'applicant',
+      null,
+      null,
+      null
+    )
+  $$,
+  '42501',
+  'This actor cannot record that attendance event.',
+  'database permissions reject a recruiter acting for the applicant'
+);
+
+select throws_ok(
+  $$
+    select public.record_attendance_event(
+      '00000000-0000-0000-0000-000000000011',
+      'recruiter',
+      '20000000-0000-4000-8000-000000000002',
+      'recruiter_cancelled',
+      'recruiter',
+      null,
+      null,
+      null
+    )
+  $$,
+  '42501',
+  'Recruiter does not own this opportunity.',
+  'cross-owner recruiter attendance is denied'
+);
+
+select is(
+  public.record_attendance_event(
+    '00000000-0000-0000-0000-000000000011',
+    'recruiter',
+    '10000000-0000-4000-8000-000000000001',
+    'applicant_no_show',
+    'applicant',
+    null,
+    null,
+    '2099-09-23T04:00:00Z'
+  ) ->> 'eventType',
+  'applicant_no_show',
+  'recruiter can factually report the applicant no-show'
+);
+
+select is(
+  public.record_attendance_event(
+    '00000000-0000-0000-0000-000000000011',
+    'applicant',
+    null,
+    'dispute_opened',
+    'applicant',
+    (
+      select id
+      from public.attendance_events
+      where application_id = '00000000-0000-0000-0000-000000000011'
+        and event_type = 'applicant_no_show'
+    ),
+    null,
+    null
+  ) ->> 'eventType',
+  'dispute_opened',
+  'applicant can open a dispute against its no-show event'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.retention_holds
+    where application_id = '00000000-0000-0000-0000-000000000011'
+      and released_at is null
+  ),
+  1::bigint,
+  'opening a dispute atomically opens one retention hold'
+);
+
+select throws_ok(
+  $$
+    update public.attendance_events
+    set occurred_at = now()
+    where application_id = '00000000-0000-0000-0000-000000000011'
+  $$,
+  'P0001',
+  'Attendance history is append-only.',
+  'privileged updates cannot mutate attendance history'
+);
+
+select throws_ok(
+  $$
+    delete from public.attendance_events
+    where application_id = '00000000-0000-0000-0000-000000000011'
+  $$,
+  'P0001',
+  'Attendance history is append-only.',
+  'privileged deletes cannot erase attendance history'
+);
+
+update public.application_photos
+set expires_at = '2026-09-01T00:00:00Z'
+where id = '00000000-0000-4000-8000-000000000021';
+
+select is(
+  (
+    select held
+    from public.list_expired_photo_cleanup_candidates('2026-09-22T00:00:00Z')
+    where id = '00000000-0000-4000-8000-000000000021'
+  ),
+  true,
+  'an active dispute hold marks an expired photo as held'
+);
+
+select is(
+  public.record_attendance_event(
+    '00000000-0000-0000-0000-000000000011',
+    'operator',
+    null,
+    'dispute_resolved',
+    'applicant',
+    (
+      select id
+      from public.attendance_events
+      where application_id = '00000000-0000-0000-0000-000000000011'
+        and event_type = 'dispute_opened'
+    ),
+    'confirmed',
+    null
+  ) ->> 'resolution',
+  'confirmed',
+  'operator appends the dispute resolution without replacing history'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.retention_holds
+    where application_id = '00000000-0000-0000-0000-000000000011'
+      and released_at is null
+  ),
+  0::bigint,
+  'resolving a dispute atomically releases its retention hold'
+);
+
+select is(
+  (
+    select held
+    from public.list_expired_photo_cleanup_candidates('2026-09-22T00:00:00Z')
+    where id = '00000000-0000-4000-8000-000000000021'
+  ),
+  false,
+  'a released hold no longer blocks expired-photo cleanup'
+);
+
+select is(
+  public.claim_application_photo_cleanup(
+    '00000000-0000-4000-8000-000000000022',
+    '00000000-0000-4000-8000-000000000901',
+    '2026-09-22T00:00:00Z'
+  ),
+  false,
+  'current photo metadata cannot be claimed for cleanup'
+);
+
+select is(
+  public.claim_application_photo_cleanup(
+    '00000000-0000-4000-8000-000000000021',
+    '00000000-0000-4000-8000-000000000901',
+    '2026-09-22T00:00:00Z'
+  ),
+  true,
+  'expired unheld photo is atomically claimed before Storage removal'
+);
+
+select is(
+  public.finalize_application_photo_cleanup(
+    '00000000-0000-4000-8000-000000000021',
+    '00000000-0000-4000-8000-000000000901',
+    '2026-09-22T00:00:00Z',
+    'retention_expired'
+  ),
+  true,
+  'matching cleanup claim records deletion evidence after Storage removal'
+);
+
+select is(
+  public.finalize_application_photo_cleanup(
+    '00000000-0000-4000-8000-000000000021',
+    '00000000-0000-4000-8000-000000000901',
+    '2026-09-22T00:00:00Z',
+    'retention_expired'
+  ),
+  false,
+  'repeated photo metadata cleanup is idempotent'
+);
+
+update public.application_photos
+set expires_at = '2026-09-01T00:00:00Z'
+where id = '00000000-0000-4000-8000-000000000022';
+
+select is(
+  public.claim_application_photo_cleanup(
+    '00000000-0000-4000-8000-000000000022',
+    '00000000-0000-4000-8000-000000000902',
+    '2026-09-22T00:00:00Z'
+  ),
+  true,
+  'cleanup records an active exact invocation claim'
+);
+
+select is(
+  public.claim_application_photo_cleanup(
+    '00000000-0000-4000-8000-000000000022',
+    '00000000-0000-4000-8000-000000000903',
+    '2026-09-22T00:14:59Z'
+  ),
+  false,
+  'a fresh cleanup claim cannot be stolen before the recovery interval'
+);
+
+select is(
+  public.claim_application_photo_cleanup(
+    '00000000-0000-4000-8000-000000000022',
+    '00000000-0000-4000-8000-000000000903',
+    '2026-09-22T00:15:00Z'
+  ),
+  true,
+  'a stale cleanup claim can be recovered after fifteen minutes'
+);
+
+select is(
+  public.record_attendance_event(
+    '00000000-0000-0000-0000-000000000012',
+    'applicant',
+    null,
+    'recruiter_no_show',
+    'recruiter',
+    null,
+    null,
+    null
+  ) ->> 'eventType',
+  'recruiter_no_show',
+  'applicant can record the recruiter no-show before a dispute'
+);
+
+select throws_ok(
+  $$
+    select public.record_attendance_event(
+      '00000000-0000-0000-0000-000000000012',
+      'applicant',
+      null,
+      'dispute_opened',
+      'recruiter',
+      (
+        select id
+        from public.attendance_events
+        where application_id = '00000000-0000-0000-0000-000000000012'
+          and event_type = 'recruiter_no_show'
+      ),
+      null,
+      null
+    )
+  $$,
+  '40001',
+  'Photo cleanup is active; retry the dispute.',
+  'an active cleanup claim closes the dispute-hold race'
+);
+
+select is(
+  public.release_application_photo_cleanup_claim(
+    '00000000-0000-4000-8000-000000000022',
+    '00000000-0000-4000-8000-000000000903'
+  ),
+  true,
+  'pre-Storage failure can release only the matching cleanup claim'
+);
+
+select is(
+  public.record_attendance_event(
+    '00000000-0000-0000-0000-000000000012',
+    'applicant',
+    null,
+    'dispute_opened',
+    'recruiter',
+    (
+      select id
+      from public.attendance_events
+      where application_id = '00000000-0000-0000-0000-000000000012'
+        and event_type = 'recruiter_no_show'
+    ),
+    null,
+    null
+  ) ->> 'eventType',
+  'dispute_opened',
+  'dispute opening succeeds after the cleanup claim is released'
+);
+
+update public.opportunities
+set status = 'closed', closed_at = '2026-09-01T00:00:00Z'
+where id = '00000000-0000-0000-0000-000000000002';
+
+insert into public.applications (
+  id,
+  opportunity_id,
+  submission_attempt_id,
+  submission_fingerprint,
+  applicant_display_name,
+  applicant_phone,
+  applicant_birth_date,
+  ruleset_id,
+  ruleset_version,
+  rules_snapshot,
+  evaluation_snapshot
+)
+values (
+  '00000000-0000-0000-0000-000000000013',
+  '00000000-0000-0000-0000-000000000002',
+  '00000000-0000-4000-8000-000000000013',
+  repeat('d', 64),
+  'Abandoned applicant',
+  '010-0000-0013',
+  '2000-01-01',
+  'makeup-certification',
+  1,
+  '[{"id":"photo-required","field":"requestedPhoto","effect":"needs_review"}]',
+  '{"rulesetId":"makeup-certification","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[{"ruleId":"photo-required","effect":"needs_review"}],"reminders":[]}'
+);
+
+insert into public.application_photo_upload_reservations (
+  id,
+  application_id,
+  storage_path,
+  content_type,
+  byte_size,
+  created_at
+)
+values (
+  '00000000-0000-4000-8000-000000000025',
+  '00000000-0000-0000-0000-000000000013',
+  'opportunity/00000000-0000-0000-0000-000000000002/application/00000000-0000-0000-0000-000000000013/00000000-0000-4000-8000-000000000025',
+  'image/jpeg',
+  3,
+  '2026-09-01T00:00:00Z'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.list_stale_photo_reservations('2026-09-22T00:00:00Z')
+    where id = '00000000-0000-4000-8000-000000000025'
+      and metadata_exists is false
+  ),
+  1::bigint,
+  'stale orphan reservations remain discoverable before draft deletion'
+);
+
+select is(
+  public.count_abandoned_pending_photo_drafts('2026-09-22T00:00:00Z'),
+  0::bigint,
+  'dry-run counting keeps a stale reservation as a deletion blocker'
+);
+
+select is(
+  public.delete_reconciled_photo_reservation(
+    '00000000-0000-4000-8000-000000000025',
+    '00000000-0000-0000-0000-000000000013',
+    'opportunity/00000000-0000-0000-0000-000000000002/application/00000000-0000-0000-0000-000000000013/00000000-0000-4000-8000-000000000025'
+  ),
+  true,
+  'cleanup removes the exact reconciled reservation'
+);
+
+select is(
+  public.count_abandoned_pending_photo_drafts('2026-09-22T00:00:00Z'),
+  1::bigint,
+  'dry-run counting finds the safely reconciled closed pending draft'
+);
+
+select is(
+  public.delete_abandoned_pending_photo_drafts('2026-09-22T00:00:00Z'),
+  1::bigint,
+  'cleanup deletes only closed pending-photo drafts after reservation reconciliation'
+);
 
 select throws_ok(
   $$

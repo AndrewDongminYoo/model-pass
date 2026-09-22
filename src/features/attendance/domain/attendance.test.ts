@@ -47,23 +47,28 @@ describe("reduceAttendance", () => {
       relatedEventId: noShow.id,
     };
 
-    expect(
-      reduceAttendance([noShow, dispute], "recruiter").applicant.noShow,
-    ).toBe(0);
-    expect(
-      reduceAttendance(
-        [
-          noShow,
-          dispute,
-          {
-            ...event("3", "dispute_resolved", "applicant"),
-            relatedEventId: dispute.id,
-            resolution: "confirmed",
-          },
-        ],
-        "recruiter",
-      ).applicant.noShow,
-    ).toBe(1);
+    const unresolved = reduceAttendance([noShow, dispute], "recruiter");
+    const confirmed = reduceAttendance(
+      [
+        noShow,
+        dispute,
+        {
+          ...event("3", "dispute_resolved", "applicant"),
+          relatedEventId: dispute.id,
+          resolution: "confirmed",
+        },
+      ],
+      "recruiter",
+    );
+
+    expect(unresolved.applicant.noShow).toBe(0);
+    expect(unresolved.history).toEqual([]);
+    expect(confirmed.applicant.noShow).toBe(1);
+    expect(confirmed.history).toEqual([
+      noShow,
+      dispute,
+      expect.objectContaining({ id: "3", resolution: "confirmed" }),
+    ]);
   });
 
   it("keeps a rejected no-show out of the counterparty count", () => {
@@ -83,6 +88,12 @@ describe("reduceAttendance", () => {
       reduceAttendance([noShow, dispute, resolution], "applicant").recruiter
         .noShow,
     ).toBe(0);
+    expect(
+      reduceAttendance([noShow, dispute, resolution], "applicant").history,
+    ).toEqual([]);
+    expect(
+      reduceAttendance([noShow, dispute, resolution], "recruiter").history,
+    ).toEqual([noShow, dispute, resolution]);
   });
 });
 

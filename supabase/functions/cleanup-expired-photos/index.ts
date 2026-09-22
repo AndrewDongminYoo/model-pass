@@ -39,8 +39,23 @@ export interface CleanupDependencies {
     deletedAt: string;
     reason: "retention_expired";
   }) => Promise<boolean>;
-  deleteReservation: (reservation: StaleReservation) => Promise<boolean>;
+  claimReservation: (
+    reservation: StaleReservation & {
+      invocationId: string;
+      claimedAt: string;
+    },
+  ) => Promise<boolean>;
+  releaseReservationClaim: (
+    reservation: StaleReservation & { invocationId: string },
+  ) => Promise<boolean>;
+  deleteClaimedReservation: (
+    reservation: StaleReservation & { invocationId: string },
+  ) => Promise<boolean>;
+  deleteMetadataReservation: (
+    reservation: StaleReservation,
+  ) => Promise<boolean>;
   countPendingDrafts: (now: string) => Promise<number>;
+  countProjectedPendingDrafts: (now: string) => Promise<number>;
   deletePendingDrafts: (now: string) => Promise<number>;
   reportError: (message: string, error: unknown) => void;
 }
@@ -55,7 +70,18 @@ interface CleanupResult {
     orphansDeleted: number;
     failed: number;
   };
-  pendingDrafts: { eligible: number; deleted: number };
+  pendingDrafts: {
+    eligible: number;
+    projectedEligibleAfterReconciliation: number;
+    deleted: number;
+  };
+}
+
+export class CertainStorageNonDeletionError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "CertainStorageNonDeletionError";
+  }
 }
 
 class CleanupRequestError extends Error {
@@ -77,6 +103,8 @@ export async function cleanupExpiredPhotos(
   const photos = await dependencies.listExpiredPhotos(now);
   const reservations = await dependencies.listStaleReservations(now);
   const pendingDraftsEligible = await dependencies.countPendingDrafts(now);
+  const pendingDraftsProjected =
+    await dependencies.countProjectedPendingDrafts(now);
   const result: CleanupResult = {
     invocationId,
     dryRun,
@@ -92,7 +120,11 @@ export async function cleanupExpiredPhotos(
       orphansDeleted: 0,
       failed: 0,
     },
-    pendingDrafts: { eligible: pendingDraftsEligible, deleted: 0 },
+    pendingDrafts: {
+      eligible: pendingDraftsEligible,
+      projectedEligibleAfterReconciliation: pendingDraftsProjected,
+      deleted: 0,
+    },
   };
 
   if (dryRun) return result;
@@ -121,7 +153,11 @@ export async function cleanupExpiredPhotos(
       }
       result.photos.deleted += 1;
     } catch (error) {
-      if (claimed && !storageRemoved) {
+      if (
+        claimed &&
+        !storageRemoved &&
+        error instanceof CertainStorageNonDeletionError
+      ) {
         try {
           const released = await dependencies.releasePhotoClaim({
             id: photo.id,
@@ -145,20 +181,57 @@ export async function cleanupExpiredPhotos(
   }
 
   for (const reservation of reservations) {
+    let claimed = false;
+    let storageRemoved = false;
     try {
-      if (!reservation.metadataExists) {
-        await dependencies.removeObject(reservation.storagePath);
-      }
-      const deleted = await dependencies.deleteReservation(reservation);
-      if (!deleted) {
-        throw new Error("Photo reservation was not removed.");
-      }
       if (reservation.metadataExists) {
+        const deleted =
+          await dependencies.deleteMetadataReservation(reservation);
+        if (!deleted) {
+          throw new Error("Photo reservation was not removed.");
+        }
         result.reservations.metadataMatched += 1;
       } else {
+        claimed = await dependencies.claimReservation({
+          ...reservation,
+          invocationId,
+          claimedAt: now,
+        });
+        if (!claimed) continue;
+        await dependencies.removeObject(reservation.storagePath);
+        storageRemoved = true;
+        const deleted = await dependencies.deleteClaimedReservation({
+          ...reservation,
+          invocationId,
+        });
+        if (!deleted) {
+          throw new Error("Claimed photo reservation was not removed.");
+        }
         result.reservations.orphansDeleted += 1;
       }
     } catch (error) {
+      if (
+        claimed &&
+        !storageRemoved &&
+        error instanceof CertainStorageNonDeletionError
+      ) {
+        try {
+          const released = await dependencies.releaseReservationClaim({
+            ...reservation,
+            invocationId,
+          });
+          if (!released) {
+            throw new Error("Reservation cleanup claim was not released.", {
+              cause: error,
+            });
+          }
+        } catch (releaseError) {
+          dependencies.reportError(
+            `Reservation cleanup claim release failed for ${reservation.id}.`,
+            releaseError,
+          );
+        }
+      }
       result.reservations.failed += 1;
       dependencies.reportError(
         `Reservation cleanup failed for ${reservation.id}.`,
@@ -345,10 +418,29 @@ export function createSupabaseDependencies(
       return data === true;
     },
     async removeObject(storagePath) {
-      const { error } = await client.storage
-        .from(BUCKET_ID)
-        .remove([storagePath]);
-      if (error !== null) throw error;
+      let removal: Awaited<
+        ReturnType<ReturnType<typeof client.storage.from>["remove"]>
+      >;
+      try {
+        removal = await client.storage.from(BUCKET_ID).remove([storagePath]);
+      } catch (error) {
+        throw new Error("Storage removal outcome is uncertain.", {
+          cause: error,
+        });
+      }
+      if (removal.error !== null) {
+        const classification = classifyStorageRemovalFailure(removal.error);
+        if (classification === "already_absent") return;
+        if (classification === "certain_non_deletion") {
+          throw new CertainStorageNonDeletionError(
+            "Storage rejected object removal.",
+            { cause: removal.error },
+          );
+        }
+        throw new Error("Storage removal outcome is uncertain.", {
+          cause: removal.error,
+        });
+      }
     },
     async releasePhotoClaim(input) {
       const { data, error } = await client.rpc(
@@ -374,7 +466,47 @@ export function createSupabaseDependencies(
       if (error !== null) throw error;
       return data === true;
     },
-    async deleteReservation(reservation) {
+    async claimReservation(reservation) {
+      const { data, error } = await client.rpc(
+        "claim_photo_upload_reservation_cleanup",
+        {
+          p_reservation_id: reservation.id,
+          p_application_id: reservation.applicationId,
+          p_storage_path: reservation.storagePath,
+          p_invocation_id: reservation.invocationId,
+          p_claimed_at: reservation.claimedAt,
+        },
+      );
+      if (error !== null) throw error;
+      return data === true;
+    },
+    async releaseReservationClaim(reservation) {
+      const { data, error } = await client.rpc(
+        "release_photo_upload_reservation_cleanup_claim",
+        {
+          p_reservation_id: reservation.id,
+          p_application_id: reservation.applicationId,
+          p_storage_path: reservation.storagePath,
+          p_invocation_id: reservation.invocationId,
+        },
+      );
+      if (error !== null) throw error;
+      return data === true;
+    },
+    async deleteClaimedReservation(reservation) {
+      const { data, error } = await client.rpc(
+        "delete_claimed_photo_upload_reservation",
+        {
+          p_reservation_id: reservation.id,
+          p_application_id: reservation.applicationId,
+          p_storage_path: reservation.storagePath,
+          p_invocation_id: reservation.invocationId,
+        },
+      );
+      if (error !== null) throw error;
+      return data === true;
+    },
+    async deleteMetadataReservation(reservation) {
       const { data, error } = await client.rpc(
         "delete_reconciled_photo_reservation",
         {
@@ -394,6 +526,14 @@ export function createSupabaseDependencies(
       if (error !== null) throw error;
       return Number(data);
     },
+    async countProjectedPendingDrafts(now) {
+      const { data, error } = await client.rpc(
+        "count_projected_abandoned_pending_photo_drafts",
+        { p_now: now },
+      );
+      if (error !== null) throw error;
+      return Number(data);
+    },
     async deletePendingDrafts(now) {
       const { data, error } = await client.rpc(
         "delete_abandoned_pending_photo_drafts",
@@ -408,6 +548,33 @@ export function createSupabaseDependencies(
       console.error(message, error);
     },
   };
+}
+
+function classifyStorageRemovalFailure(
+  error: unknown,
+): "already_absent" | "certain_non_deletion" | "ambiguous" {
+  if (typeof error !== "object" || error === null) return "ambiguous";
+  const value = error as { status?: unknown; statusCode?: unknown };
+  const rawStatus = value.status ?? value.statusCode;
+  const status =
+    typeof rawStatus === "number"
+      ? rawStatus
+      : typeof rawStatus === "string" && /^[1-5][0-9]{2}$/.test(rawStatus)
+        ? Number(rawStatus)
+        : undefined;
+  if (status === 404 || status === 410) return "already_absent";
+  if (
+    status === 400 ||
+    status === 401 ||
+    status === 403 ||
+    status === 405 ||
+    status === 413 ||
+    status === 415 ||
+    status === 422
+  ) {
+    return "certain_non_deletion";
+  }
+  return "ambiguous";
 }
 
 async function constantTimeEqual(

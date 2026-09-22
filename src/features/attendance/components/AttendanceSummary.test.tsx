@@ -30,3 +30,32 @@ it("renders separate factual counts and timestamped history without a score", ()
   expect(screen.getByText("2026-09-23T04:00:00.000Z")).toBeVisible();
   expect(screen.queryByText(/score|rating|rank/i)).not.toBeInTheDocument();
 });
+
+it("does not render unresolved disputed no-show history to the counterparty", () => {
+  render(
+    <AttendanceSummary
+      viewerParty="recruiter"
+      events={[
+        {
+          id: "no-show",
+          eventType: "applicant_no_show",
+          party: "applicant",
+          occurredAt: "2026-09-22T03:00:00.000Z",
+        },
+        {
+          id: "dispute",
+          eventType: "dispute_opened",
+          party: "applicant",
+          relatedEventId: "no-show",
+          occurredAt: "2026-09-22T04:00:00.000Z",
+        },
+      ]}
+    />,
+  );
+
+  expect(screen.queryByText("applicant_no_show")).not.toBeInTheDocument();
+  expect(screen.queryByText("dispute_opened")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("2026-09-22T03:00:00.000Z"),
+  ).not.toBeInTheDocument();
+});

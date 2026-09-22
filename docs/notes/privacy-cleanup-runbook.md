@@ -15,11 +15,15 @@ One invocation uses this order:
 2. Atomically claim each exact expired, undeleted, unheld photo with the invocation UUID and claim time.
 3. Remove each claimed private Storage object by its exact stored path.
 4. Finalize `deleted_at`, `deletion_reason`, and the matching invocation UUID, which also clears the claim.
-5. Reconcile upload reservations older than the ten-minute signed grant window.
-6. Delete closed or scheduled-closed `pending_photo` drafts only when no reservation or photo metadata remains.
+5. Reconcile upload reservations older than the ten-minute signed grant window by claiming the exact reservation and application state before any Storage removal.
+6. Recheck that the exact reservation still exists and matching photo metadata is still absent while holding the application lock.
+7. Remove the exact Storage object, then delete only the reservation with the matching invocation claim.
+8. Delete closed or scheduled-closed `pending_photo` drafts only when no reservation or photo metadata remains.
 
 For a stale reservation with exact photo metadata, cleanup removes only the reservation.
 For a stale reservation without exact photo metadata, cleanup removes the exact Storage object before it removes the reservation.
+An active reservation cleanup claim blocks photo finalization for the same application and exact upload.
+If finalization wins the application lock first, the reservation or matching metadata recheck prevents cleanup from authorizing Storage removal.
 This order preserves the database evidence needed to retry an interrupted object cleanup.
 
 ## Dry Run
@@ -32,6 +36,12 @@ from public.list_expired_photo_cleanup_candidates(now());
 
 select *
 from public.list_stale_photo_reservations(now());
+
+select public.count_abandoned_pending_photo_drafts(now()) as eligible_now;
+
+select
+  public.count_projected_abandoned_pending_photo_drafts(now())
+    as projected_eligible_after_reconciliation;
 ```
 
 Invoke a non-mutating function pass before every production cleanup:
@@ -46,6 +56,8 @@ curl --fail-with-body \
 ```
 
 The dry-run response reports eligible and held photos, stale reservations, and zero performed deletions.
+For pending drafts, `eligible` is the current-state count with every reservation acting as a blocker.
+`projectedEligibleAfterReconciliation` is the count expected after reservations older than the ten-minute grant window are reconciled; a current reservation still blocks that projection.
 Review unexpectedly high counts before continuing.
 
 ## Production Invocation
@@ -108,12 +120,14 @@ If a claim is active, opening a dispute or another hold fails with a retryable t
 
 ## Retry and Recovery
 
-If Storage rejects removal before success, the function releases its matching claim, leaves photo metadata intact, and increments the failure count.
+If Storage returns a clear pre-delete rejection (`400`, `401`, `403`, `405`, `413`, `415`, or `422`), the function releases its matching photo or reservation claim, preserves database evidence, and increments the failure count.
+If Storage returns `404` or `410`, the exact object is already absent, so cleanup keeps the claim and completes photo metadata finalization or reservation deletion.
 Retry the invocation after correcting Storage access or availability.
-If Storage removal succeeds but metadata finalization fails or is uncertain, the function retains the exact claim and metadata as recovery evidence.
+If the Storage request has an ambiguous result, including `408`, any `5xx` response, a network failure, or response loss, the function retains the claim because the object may have been removed.
+If Storage removal succeeds but photo metadata finalization or claimed-reservation deletion fails or is uncertain, the function also retains the exact claim as recovery evidence.
 Do not manually clear that claim.
-A different invocation cannot replace a fresh claim.
-After 15 minutes, the claim is stale and a cleanup invocation can atomically replace it, remove the same exact path idempotently, and finalize deletion evidence.
+A different invocation cannot replace a fresh photo or reservation claim.
+After 15 minutes, the claim is stale and a cleanup invocation can atomically replace it, remove the same exact path idempotently, and finalize the matching photo evidence or reservation reconciliation.
 The 15-minute interval bounds automated recovery and is longer than the ten-minute signed upload grant window.
 If reservation reconciliation fails, the reservation remains and blocks pending-draft deletion.
 Do not manually delete the application first because its cascades can remove the only orphan-object record.

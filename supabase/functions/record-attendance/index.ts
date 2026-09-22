@@ -101,6 +101,12 @@ function assertActorPermission(
     );
   }
   if (input.eventType === "dispute_opened") {
+    if (actor.party !== input.party) {
+      throw new AttendanceRequestError(
+        "A participant may only dispute an event for its own party.",
+        403,
+      );
+    }
     return;
   }
   const allowed =

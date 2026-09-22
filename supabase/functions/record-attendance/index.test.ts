@@ -99,6 +99,29 @@ registerTest("allows only an operator to resolve a dispute", async () => {
   assertEquals(recorded.length, 1);
 });
 
+registerTest(
+  "requires a participant to open a dispute for its own party",
+  async () => {
+    // Production break: a recruiter opening a dispute as the applicant can suppress the recruiter's own no-show from applicant history.
+    const recorded: unknown[] = [];
+    const response = await createRecordAttendanceHandler(
+      dependencies({ party: "recruiter", userId: "recruiter-1" }, recorded),
+    )(
+      request({
+        applicationId,
+        opportunityId,
+        submissionAttemptId,
+        eventType: "dispute_opened",
+        party: "applicant",
+        relatedEventId: "00000000-0000-4000-8000-000000000099",
+      }),
+    );
+
+    assertEquals(response.status, 403);
+    assertEquals(recorded.length, 0);
+  },
+);
+
 registerTest("rejects arbitrary attendance details", async () => {
   // Production break: accepting unbounded free text creates an unnecessary sensitive-data channel.
   const recorded: unknown[] = [];

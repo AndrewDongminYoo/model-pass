@@ -40,6 +40,7 @@ export function reduceAttendance(
 ): AttendanceSummaryResult {
   const disputesByEvent = new Map<string, AttendanceEvent>();
   const resolutionsByDispute = new Map<string, AttendanceEvent>();
+  const eventsById = new Map(events.map((event) => [event.id, event]));
   for (const event of events) {
     if (event.eventType === "dispute_opened" && event.relatedEventId) {
       disputesByEvent.set(event.relatedEventId, event);
@@ -52,7 +53,15 @@ export function reduceAttendance(
   const result: AttendanceSummaryResult = {
     recruiter: emptyCounts(),
     applicant: emptyCounts(),
-    history: events,
+    history: events.filter((event) =>
+      isHistoryEventVisible(
+        event,
+        viewerParty,
+        eventsById,
+        disputesByEvent,
+        resolutionsByDispute,
+      ),
+    ),
   };
   for (const event of events) {
     const counts = result[event.party];
@@ -89,6 +98,51 @@ export function reduceAttendance(
     }
   }
   return result;
+}
+
+function isHistoryEventVisible(
+  event: AttendanceEvent,
+  viewerParty: AttendanceParty,
+  eventsById: Map<string, AttendanceEvent>,
+  disputesByEvent: Map<string, AttendanceEvent>,
+  resolutionsByDispute: Map<string, AttendanceEvent>,
+): boolean {
+  if (
+    event.eventType === "recruiter_no_show" ||
+    event.eventType === "applicant_no_show"
+  ) {
+    return isNoShowVisible(
+      event,
+      viewerParty,
+      disputesByEvent,
+      resolutionsByDispute,
+    );
+  }
+  if (event.eventType === "dispute_opened") {
+    if (event.relatedEventId === undefined) return false;
+    const noShow = eventsById.get(event.relatedEventId);
+    if (noShow === undefined) return false;
+    return isNoShowVisible(
+      noShow,
+      viewerParty,
+      disputesByEvent,
+      resolutionsByDispute,
+    );
+  }
+  if (event.eventType === "dispute_resolved") {
+    if (event.relatedEventId === undefined) return false;
+    const dispute = eventsById.get(event.relatedEventId);
+    if (dispute?.relatedEventId === undefined) return false;
+    const noShow = eventsById.get(dispute.relatedEventId);
+    if (noShow === undefined) return false;
+    return isNoShowVisible(
+      noShow,
+      viewerParty,
+      disputesByEvent,
+      resolutionsByDispute,
+    );
+  }
+  return true;
 }
 
 function emptyCounts(): AttendanceCounts {

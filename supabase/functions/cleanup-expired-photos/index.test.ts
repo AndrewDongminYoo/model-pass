@@ -1,4 +1,5 @@
 import {
+  CertainStorageNonDeletionError,
   cleanupExpiredPhotos,
   createCleanupExpiredPhotosHandler,
   createSupabaseDependencies,
@@ -45,13 +46,23 @@ registerTest(
         order.push(`remove:${path}`);
         return Promise.resolve();
       },
-      deleteReservation: (item) => {
+      claimReservation: (item) => {
+        order.push(`claim:${item.storagePath}`);
+        return Promise.resolve(true);
+      },
+      deleteMetadataReservation: (item) => {
+        order.push(`reservation:${item.storagePath}`);
+        reservations = reservations.filter((entry) => entry.id !== item.id);
+        return Promise.resolve(true);
+      },
+      deleteClaimedReservation: (item) => {
         order.push(`reservation:${item.storagePath}`);
         reservations = reservations.filter((entry) => entry.id !== item.id);
         return Promise.resolve(true);
       },
       countPendingDrafts: () =>
         Promise.resolve(reservations.length === 0 ? pendingDrafts : 0),
+      countProjectedPendingDrafts: () => Promise.resolve(pendingDrafts),
       deletePendingDrafts: () => {
         order.push("drafts");
         const deleted = pendingDrafts;
@@ -65,6 +76,7 @@ registerTest(
 
     assertEquals(order, [
       "reservation:metadata",
+      "claim:orphan",
       "remove:orphan",
       "reservation:orphan",
       "drafts",
@@ -72,10 +84,18 @@ registerTest(
     ]);
     assertEquals(result.reservations.metadataMatched, 1);
     assertEquals(result.reservations.orphansDeleted, 1);
-    assertEquals(result.pendingDrafts, { eligible: 0, deleted: 1 });
+    assertEquals(result.pendingDrafts, {
+      eligible: 0,
+      projectedEligibleAfterReconciliation: 1,
+      deleted: 1,
+    });
     assertEquals(repeated.reservations.orphansDeleted, 0);
     assertEquals(repeated.reservations.metadataMatched, 0);
-    assertEquals(repeated.pendingDrafts, { eligible: 0, deleted: 0 });
+    assertEquals(repeated.pendingDrafts, {
+      eligible: 0,
+      projectedEligibleAfterReconciliation: 0,
+      deleted: 0,
+    });
   },
 );
 
@@ -105,6 +125,7 @@ registerTest(
     assertEquals(dryRun.status, 200);
     assertEquals((await dryRun.json()).pendingDrafts, {
       eligible: 2,
+      projectedEligibleAfterReconciliation: 3,
       deleted: 0,
     });
     assertEquals(state.removed, []);
@@ -134,7 +155,7 @@ registerTest(
 );
 
 registerTest(
-  "releases a matching claim when Storage removal fails",
+  "releases a matching photo claim after a coded Storage non-deletion",
   async () => {
     // Production break: retaining a claim after a definite pre-deletion Storage failure blocks holds and recovery unnecessarily.
     const order: string[] = [];
@@ -148,7 +169,9 @@ registerTest(
         },
         removeObject: () => {
           order.push("remove");
-          return Promise.reject(new Error("storage rejected removal"));
+          return Promise.reject(
+            new CertainStorageNonDeletionError("storage rejected removal"),
+          );
         },
         releasePhotoClaim: () => {
           order.push("release");
@@ -159,6 +182,88 @@ registerTest(
 
     assertEquals(order, ["claim", "remove", "release"]);
     assertEquals(result.photos.failed, 1);
+  },
+);
+
+registerTest(
+  "retains a matching photo claim after an ambiguous Storage outcome",
+  async () => {
+    // Production break: releasing after response loss can let a hold open after the object was actually removed.
+    const order: string[] = [];
+    const result = await cleanupExpiredPhotos(
+      false,
+      emptyDependencies({
+        listExpiredPhotos: () => Promise.resolve([photo("expired", false)]),
+        claimPhoto: () => {
+          order.push("claim");
+          return Promise.resolve(true);
+        },
+        removeObject: () => {
+          order.push("remove");
+          return Promise.reject(new Error("response lost"));
+        },
+        releasePhotoClaim: () => {
+          order.push("release");
+          return Promise.resolve(true);
+        },
+      }),
+    );
+
+    assertEquals(order, ["claim", "remove"]);
+    assertEquals(result.photos.failed, 1);
+  },
+);
+
+registerTest(
+  "releases a reservation claim only after a coded Storage non-deletion",
+  async () => {
+    // Production break: an exact coded rejection is safe to release, while response loss must retain reconciliation evidence.
+    const certainOrder: string[] = [];
+    const ambiguousOrder: string[] = [];
+    const stale = reservation("orphan", false);
+    const certain = await cleanupExpiredPhotos(
+      false,
+      emptyDependencies({
+        listStaleReservations: () => Promise.resolve([stale]),
+        claimReservation: () => {
+          certainOrder.push("claim");
+          return Promise.resolve(true);
+        },
+        removeObject: () => {
+          certainOrder.push("remove");
+          return Promise.reject(
+            new CertainStorageNonDeletionError("coded rejection"),
+          );
+        },
+        releaseReservationClaim: () => {
+          certainOrder.push("release");
+          return Promise.resolve(true);
+        },
+      }),
+    );
+    const ambiguous = await cleanupExpiredPhotos(
+      false,
+      emptyDependencies({
+        listStaleReservations: () => Promise.resolve([stale]),
+        claimReservation: () => {
+          ambiguousOrder.push("claim");
+          return Promise.resolve(true);
+        },
+        removeObject: () => {
+          ambiguousOrder.push("remove");
+          return Promise.reject(new Error("response lost"));
+        },
+        releaseReservationClaim: () => {
+          ambiguousOrder.push("release");
+          return Promise.resolve(true);
+        },
+      }),
+    );
+
+    assertEquals(certainOrder, ["claim", "remove", "release"]);
+    assertEquals(ambiguousOrder, ["claim", "remove"]);
+    assertEquals(certain.reservations.failed, 1);
+    assertEquals(ambiguous.reservations.failed, 1);
   },
 );
 
@@ -192,6 +297,110 @@ registerTest(
 
     assertEquals(order, ["claim", "remove", "finalize"]);
     assertEquals(result.photos.failed, 1);
+  },
+);
+
+registerTest(
+  "classifies a Storage 403 as certain non-deletion and releases the claim",
+  async () => {
+    // Production break: the cleanup flow must receive the adapter's certainty classification, not a test-only synthetic error.
+    const adapter = storageDependencies({ statusCode: "403" });
+    let adapterError: unknown;
+    try {
+      await adapter.removeObject("forbidden");
+    } catch (error) {
+      adapterError = error;
+    }
+    const order: string[] = [];
+    const result = await cleanupExpiredPhotos(
+      false,
+      emptyDependencies({
+        listExpiredPhotos: () => Promise.resolve([photo("expired", false)]),
+        claimPhoto: () => {
+          order.push("claim");
+          return Promise.resolve(true);
+        },
+        removeObject: adapter.removeObject,
+        releasePhotoClaim: () => {
+          order.push("release");
+          return Promise.resolve(true);
+        },
+      }),
+    );
+
+    assertEquals(adapterError instanceof CertainStorageNonDeletionError, true);
+    assertEquals(order, ["claim", "release"]);
+    assertEquals(result.photos.failed, 1);
+  },
+);
+
+registerTest(
+  "keeps claims for adapter-classified 408 and server errors",
+  async () => {
+    // Production break: a timeout or server response can arrive after deletion and therefore cannot reopen the claim race.
+    for (const statusCode of ["408", "500", "503"]) {
+      let releases = 0;
+      const adapter = storageDependencies({ statusCode });
+      let adapterError: unknown;
+      try {
+        await adapter.removeObject("ambiguous");
+      } catch (error) {
+        adapterError = error;
+      }
+      const result = await cleanupExpiredPhotos(
+        false,
+        emptyDependencies({
+          listStaleReservations: () =>
+            Promise.resolve([reservation("orphan", false)]),
+          removeObject: adapter.removeObject,
+          releaseReservationClaim: () => {
+            releases += 1;
+            return Promise.resolve(true);
+          },
+        }),
+      );
+
+      assertEquals(
+        adapterError instanceof CertainStorageNonDeletionError,
+        false,
+      );
+      assertEquals(releases, 0);
+      assertEquals(result.reservations.failed, 1);
+    }
+  },
+);
+
+registerTest(
+  "treats adapter-classified 404 and 410 as already absent",
+  async () => {
+    // Production break: retaining a claim for an already absent exact object prevents database reconciliation from completing.
+    const finalized: string[] = [];
+    const deletedReservations: string[] = [];
+    const adapter = storageDependencies((path) => ({
+      statusCode: path === "expired" ? "404" : "410",
+    }));
+    const result = await cleanupExpiredPhotos(
+      false,
+      emptyDependencies({
+        listExpiredPhotos: () => Promise.resolve([photo("expired", false)]),
+        listStaleReservations: () =>
+          Promise.resolve([reservation("orphan", false)]),
+        removeObject: adapter.removeObject,
+        finalizePhotoDeletion: (input) => {
+          finalized.push(input.id);
+          return Promise.resolve(true);
+        },
+        deleteClaimedReservation: (input) => {
+          deletedReservations.push(input.id);
+          return Promise.resolve(true);
+        },
+      }),
+    );
+
+    assertEquals(result.photos.deleted, 1);
+    assertEquals(result.reservations.orphansDeleted, 1);
+    assertEquals(finalized.length, 1);
+    assertEquals(deletedReservations.length, 1);
   },
 );
 
@@ -262,6 +471,7 @@ function cleanupState() {
       return Promise.resolve(true);
     },
     countPendingDrafts: () => Promise.resolve(2),
+    countProjectedPendingDrafts: () => Promise.resolve(3),
   });
   return {
     dependencies,
@@ -288,12 +498,34 @@ function emptyDependencies(
     claimPhoto: () => Promise.resolve(true),
     releasePhotoClaim: () => Promise.resolve(true),
     finalizePhotoDeletion: () => Promise.resolve(true),
-    deleteReservation: () => Promise.resolve(true),
+    claimReservation: () => Promise.resolve(true),
+    releaseReservationClaim: () => Promise.resolve(true),
+    deleteClaimedReservation: () => Promise.resolve(true),
+    deleteMetadataReservation: () => Promise.resolve(true),
     countPendingDrafts: () => Promise.resolve(0),
+    countProjectedPendingDrafts: () => Promise.resolve(0),
     deletePendingDrafts: () => Promise.resolve(0),
     reportError: () => undefined,
     ...overrides,
   };
+}
+
+function storageDependencies(
+  error:
+    { statusCode: string } | ((storagePath: string) => { statusCode: string }),
+) {
+  const client = {
+    storage: {
+      from: () => ({
+        remove: ([storagePath]: string[]) =>
+          Promise.resolve({
+            data: null,
+            error: typeof error === "function" ? error(storagePath) : error,
+          }),
+      }),
+    },
+  };
+  return createSupabaseDependencies(client as never, "service-key");
 }
 
 function photo(

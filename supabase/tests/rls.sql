@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(84);
+select plan(100);
 
 select is(
   (select public from storage.buckets where id = 'application-photos'),
@@ -715,9 +715,68 @@ select set_config(
   true
 );
 
+select ok(
+  not has_table_privilege('authenticated', 'public.applications', 'SELECT'),
+  'authenticated recruiters do not retain broad application table select'
+);
+
+select ok(
+  has_column_privilege('authenticated', 'public.applications', 'id', 'SELECT')
+    and has_column_privilege('authenticated', 'public.applications', 'opportunity_id', 'SELECT')
+    and has_column_privilege('authenticated', 'public.applications', 'created_at', 'SELECT')
+    and has_column_privilege('authenticated', 'public.applications', 'applicant_display_name', 'SELECT')
+    and has_column_privilege('authenticated', 'public.applications', 'applicant_phone', 'SELECT')
+    and has_column_privilege('authenticated', 'public.applications', 'evaluation_snapshot', 'SELECT')
+    and has_column_privilege('authenticated', 'public.applications', 'submission_state', 'SELECT'),
+  'authenticated recruiters retain only the application columns required by the UI'
+);
+
+select ok(
+  not has_column_privilege(
+    'authenticated',
+    'public.applications',
+    'submission_attempt_id',
+    'SELECT'
+  )
+    and not has_column_privilege(
+      'authenticated',
+      'public.applications',
+      'submission_fingerprint',
+      'SELECT'
+    ),
+  'authenticated recruiters cannot read applicant capability columns'
+);
+
+select lives_ok(
+  $$
+    select
+      id,
+      opportunity_id,
+      created_at,
+      applicant_display_name,
+      applicant_phone,
+      evaluation_snapshot,
+      submission_state
+    from public.applications
+    where opportunity_id = '00000000-0000-0000-0000-000000000001'
+  $$,
+  'recruiter UI application projection remains readable under RLS'
+);
+
+select throws_ok(
+  $$
+    select submission_attempt_id, submission_fingerprint
+    from public.applications
+    where opportunity_id = '00000000-0000-0000-0000-000000000001'
+  $$,
+  '42501',
+  'permission denied for table applications',
+  'recruiter query cannot select applicant capability columns'
+);
+
 select results_eq(
   $$
-    select count(*)::bigint
+    select count(id)::bigint
     from public.applications
     where opportunity_id = '00000000-0000-0000-0000-000000000001'
   $$,
@@ -727,7 +786,7 @@ select results_eq(
 
 select results_eq(
   $$
-    select count(*)::bigint
+    select count(id)::bigint
     from public.applications
     where opportunity_id = '00000000-0000-0000-0000-000000000002'
   $$,
@@ -737,7 +796,7 @@ select results_eq(
 
 select is(
   (
-    select count(*)::bigint
+    select count(id)::bigint
     from public.applications
     where opportunity_id = '00000000-0000-0000-0000-000000000004'
   ),
@@ -1110,6 +1169,27 @@ select is(
 
 select throws_ok(
   $$
+    insert into public.attendance_events (
+      application_id,
+      recorded_by,
+      actor_party,
+      party,
+      event_type
+    ) values (
+      '00000000-0000-0000-0000-000000000011',
+      '10000000-0000-4000-8000-000000000001',
+      'recruiter',
+      'recruiter',
+      'recruiter_confirmed'
+    )
+  $$,
+  '23505',
+  'duplicate key value violates unique constraint "attendance_confirmation_once_idx"',
+  'database uniqueness prevents concurrent duplicate confirmations'
+);
+
+select throws_ok(
+  $$
     select public.record_attendance_event(
       '00000000-0000-0000-0000-000000000011',
       'recruiter',
@@ -1157,6 +1237,25 @@ select is(
   ) ->> 'eventType',
   'applicant_no_show',
   'recruiter can factually report the applicant no-show'
+);
+
+select throws_ok(
+  $$
+    insert into public.attendance_events (
+      application_id,
+      actor_party,
+      party,
+      event_type
+    ) values (
+      '00000000-0000-0000-0000-000000000011',
+      'applicant',
+      'applicant',
+      'completed'
+    )
+  $$,
+  '23505',
+  'duplicate key value violates unique constraint "attendance_final_outcome_once_idx"',
+  'database uniqueness prevents concurrent duplicate final outcomes'
 );
 
 select is(
@@ -1375,6 +1474,29 @@ select throws_ok(
       null
     )
   $$,
+  '42501',
+  'A participant may only dispute an event for its own party.',
+  'database rejects a participant opening a dispute for the counterparty'
+);
+
+select throws_ok(
+  $$
+    select public.record_attendance_event(
+      '00000000-0000-0000-0000-000000000012',
+      'recruiter',
+      '20000000-0000-4000-8000-000000000002',
+      'dispute_opened',
+      'recruiter',
+      (
+        select id
+        from public.attendance_events
+        where application_id = '00000000-0000-0000-0000-000000000012'
+          and event_type = 'recruiter_no_show'
+      ),
+      null,
+      null
+    )
+  $$,
   '40001',
   'Photo cleanup is active; retry the dispute.',
   'an active cleanup claim closes the dispute-hold race'
@@ -1392,8 +1514,8 @@ select is(
 select is(
   public.record_attendance_event(
     '00000000-0000-0000-0000-000000000012',
-    'applicant',
-    null,
+    'recruiter',
+    '20000000-0000-4000-8000-000000000002',
     'dispute_opened',
     'recruiter',
     (
@@ -1408,6 +1530,78 @@ select is(
   'dispute_opened',
   'dispute opening succeeds after the cleanup claim is released'
 );
+
+insert into public.application_photo_upload_reservations (
+  id,
+  application_id,
+  storage_path,
+  content_type,
+  byte_size,
+  created_at
+)
+values (
+  '00000000-0000-4000-8000-000000000026',
+  '00000000-0000-0000-0000-000000000014',
+  'opportunity/00000000-0000-0000-0000-000000000001/application/00000000-0000-0000-0000-000000000014/00000000-0000-4000-8000-000000000026',
+  'image/jpeg',
+  3,
+  '2026-09-01T00:00:00Z'
+);
+
+select is(
+  public.claim_photo_upload_reservation_cleanup(
+    '00000000-0000-4000-8000-000000000026',
+    '00000000-0000-0000-0000-000000000014',
+    'opportunity/00000000-0000-0000-0000-000000000001/application/00000000-0000-0000-0000-000000000014/00000000-0000-4000-8000-000000000026',
+    '00000000-0000-4000-8000-000000000904',
+    '2026-09-22T00:00:00Z'
+  ),
+  true,
+  'cleanup claims an exact stale reservation before Storage removal'
+);
+
+select throws_ok(
+  $$
+    select public.finalize_application_photo(
+      '00000000-0000-4000-8000-000000000026',
+      '00000000-0000-0000-0000-000000000014',
+      '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-4000-8000-000000000014',
+      'opportunity/00000000-0000-0000-0000-000000000001/application/00000000-0000-0000-0000-000000000014/00000000-0000-4000-8000-000000000026',
+      'image/jpeg',
+      3
+    )
+  $$,
+  '40001',
+  'Photo reservation cleanup is active; retry finalization.',
+  'Task 6 finalization cannot commit against an active reservation cleanup claim'
+);
+
+select is(
+  (
+    select jsonb_build_object(
+      'state', application.submission_state,
+      'photos', count(photo.id)
+    )
+    from public.applications application
+    left join public.application_photos photo on photo.application_id = application.id
+    where application.id = '00000000-0000-0000-0000-000000000014'
+    group by application.submission_state
+  ),
+  '{"state":"pending_photo","photos":0}'::jsonb,
+  'blocked finalization cannot leave a submitted application pointing to a removed object'
+);
+
+do $$
+begin
+  perform public.delete_claimed_photo_upload_reservation(
+    '00000000-0000-4000-8000-000000000026',
+    '00000000-0000-0000-0000-000000000014',
+    'opportunity/00000000-0000-0000-0000-000000000001/application/00000000-0000-0000-0000-000000000014/00000000-0000-4000-8000-000000000026',
+    '00000000-0000-4000-8000-000000000904'
+  );
+end;
+$$;
 
 update public.opportunities
 set status = 'closed', closed_at = '2026-09-01T00:00:00Z'
@@ -1475,13 +1669,62 @@ select is(
 );
 
 select is(
-  public.delete_reconciled_photo_reservation(
+  public.count_projected_abandoned_pending_photo_drafts('2026-09-22T00:00:00Z'),
+  1::bigint,
+  'dry-run projects eligibility after stale reservation reconciliation'
+);
+
+select is(
+  public.claim_photo_upload_reservation_cleanup(
     '00000000-0000-4000-8000-000000000025',
     '00000000-0000-0000-0000-000000000013',
-    'opportunity/00000000-0000-0000-0000-000000000002/application/00000000-0000-0000-0000-000000000013/00000000-0000-4000-8000-000000000025'
+    'opportunity/00000000-0000-0000-0000-000000000002/application/00000000-0000-0000-0000-000000000013/00000000-0000-4000-8000-000000000025',
+    '00000000-0000-4000-8000-000000000905',
+    '2026-09-22T00:00:00Z'
   ),
   true,
-  'cleanup removes the exact reconciled reservation'
+  'cleanup claims the stale orphan reservation'
+);
+
+select is(
+  public.count_projected_abandoned_pending_photo_drafts('2026-09-22T00:00:00Z'),
+  0::bigint,
+  'dry-run projection does not promise deletion while a fresh claim blocks this pass'
+);
+
+select is(
+  public.claim_photo_upload_reservation_cleanup(
+    '00000000-0000-4000-8000-000000000025',
+    '00000000-0000-0000-0000-000000000013',
+    'opportunity/00000000-0000-0000-0000-000000000002/application/00000000-0000-0000-0000-000000000013/00000000-0000-4000-8000-000000000025',
+    '00000000-0000-4000-8000-000000000906',
+    '2026-09-22T00:14:59Z'
+  ),
+  false,
+  'a fresh reservation claim cannot be stolen before recovery'
+);
+
+select is(
+  public.claim_photo_upload_reservation_cleanup(
+    '00000000-0000-4000-8000-000000000025',
+    '00000000-0000-0000-0000-000000000013',
+    'opportunity/00000000-0000-0000-0000-000000000002/application/00000000-0000-0000-0000-000000000013/00000000-0000-4000-8000-000000000025',
+    '00000000-0000-4000-8000-000000000906',
+    '2026-09-22T00:15:00Z'
+  ),
+  true,
+  'a stale reservation claim can be recovered after fifteen minutes'
+);
+
+select is(
+  public.delete_claimed_photo_upload_reservation(
+    '00000000-0000-4000-8000-000000000025',
+    '00000000-0000-0000-0000-000000000013',
+    'opportunity/00000000-0000-0000-0000-000000000002/application/00000000-0000-0000-0000-000000000013/00000000-0000-4000-8000-000000000025',
+    '00000000-0000-4000-8000-000000000906'
+  ),
+  true,
+  'cleanup removes only the exact reservation matching its active claim'
 );
 
 select is(

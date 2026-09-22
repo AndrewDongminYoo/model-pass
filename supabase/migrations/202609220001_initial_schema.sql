@@ -2,7 +2,7 @@ create extension if not exists pgcrypto with schema extensions;
 
 create table public.opportunities (
   id uuid primary key default gen_random_uuid(),
-  recruiter_id uuid not null references auth.users(id) on delete cascade,
+  recruiter_id uuid not null references auth.users(id) on delete restrict,
   category text not null check (category in ('hair_promotion', 'makeup_certification')),
   title text not null,
   starts_at timestamptz not null,
@@ -22,7 +22,7 @@ create table public.opportunities (
 
 create table public.applications (
   id uuid primary key default gen_random_uuid(),
-  opportunity_id uuid not null references public.opportunities(id) on delete cascade,
+  opportunity_id uuid not null references public.opportunities(id) on delete restrict,
   applicant_display_name text not null,
   applicant_phone text not null,
   applicant_birth_date date not null,
@@ -105,13 +105,19 @@ declare
   target_opportunity public.opportunities%rowtype;
   new_application_id uuid;
 begin
-  if not p_current_application_consent then
+  if p_current_application_consent is not true then
     raise exception using
       errcode = '22023',
       message = 'Current application consent is required.';
   end if;
 
-  if extract(year from age(current_date, p_applicant_birth_date)) < 19 then
+  if p_applicant_birth_date is null
+    or extract(
+      year from age(
+        (now() at time zone 'Asia/Seoul')::date,
+        p_applicant_birth_date
+      )
+    ) < 19 then
     raise exception using
       errcode = '22023',
       message = 'Applicants must be at least 19 years old.';
@@ -119,6 +125,22 @@ begin
 
   if jsonb_typeof(p_answers) is distinct from 'object' then
     raise exception using errcode = '22023', message = 'Answers must be an object.';
+  end if;
+
+  if jsonb_typeof(p_rules_snapshot) is distinct from 'array' then
+    raise exception using errcode = '22023', message = 'Rules snapshot must be an array.';
+  end if;
+
+  if jsonb_typeof(p_evaluation_snapshot) is distinct from 'object'
+    or jsonb_typeof(p_evaluation_snapshot -> 'rulesetId') is distinct from 'string'
+    or jsonb_typeof(p_evaluation_snapshot -> 'rulesetVersion') is distinct from 'number'
+    or jsonb_typeof(p_evaluation_snapshot -> 'eligible') is distinct from 'boolean'
+    or jsonb_typeof(p_evaluation_snapshot -> 'failures') is distinct from 'array'
+    or jsonb_typeof(p_evaluation_snapshot -> 'reviews') is distinct from 'array'
+    or jsonb_typeof(p_evaluation_snapshot -> 'reminders') is distinct from 'array' then
+    raise exception using
+      errcode = '22023',
+      message = 'Evaluation snapshot has an invalid shape.';
   end if;
 
   select *
@@ -136,17 +158,33 @@ begin
     raise exception using errcode = '22023', message = 'Opportunity is closed.';
   end if;
 
-  if target_opportunity.ruleset_id <> p_ruleset_id
-    or target_opportunity.ruleset_version <> p_ruleset_version
-    or target_opportunity.rules_snapshot <> p_rules_snapshot then
+  if target_opportunity.ruleset_id is distinct from p_ruleset_id
+    or target_opportunity.ruleset_version is distinct from p_ruleset_version
+    or target_opportunity.rules_snapshot is distinct from p_rules_snapshot then
     raise exception using errcode = '40001', message = 'Opportunity rules changed before submission.';
   end if;
 
-  if p_evaluation_snapshot ->> 'rulesetId' <> p_ruleset_id
-    or (p_evaluation_snapshot ->> 'rulesetVersion')::integer <> p_ruleset_version
-    or coalesce((p_evaluation_snapshot ->> 'eligible')::boolean, false) is not true
-    or jsonb_array_length(coalesce(p_evaluation_snapshot -> 'failures', '[]'::jsonb)) <> 0 then
+  if p_evaluation_snapshot ->> 'rulesetId' is distinct from p_ruleset_id
+    or p_evaluation_snapshot -> 'rulesetVersion' is distinct from to_jsonb(p_ruleset_version)
+    or p_evaluation_snapshot -> 'eligible' is distinct from 'true'::jsonb
+    or jsonb_array_length(p_evaluation_snapshot -> 'failures') <> 0 then
     raise exception using errcode = '22023', message = 'Evaluation snapshot is not eligible.';
+  end if;
+
+  if p_answers -> 'isAdult' is distinct from 'true'::jsonb
+    or exists (
+      select 1
+      from jsonb_object_keys(p_answers) as answer(field)
+      where answer.field <> 'isAdult'
+        and not exists (
+          select 1
+          from jsonb_array_elements(target_opportunity.rules_snapshot) as rule
+          where rule ->> 'field' = answer.field
+        )
+    ) then
+    raise exception using
+      errcode = '22023',
+      message = 'Answers contain fields not requested by this opportunity.';
   end if;
 
   insert into public.applications (
@@ -231,12 +269,6 @@ to authenticated
 using ((select auth.uid()) = recruiter_id)
 with check ((select auth.uid()) = recruiter_id);
 
-create policy "Recruiters can delete owned opportunities"
-on public.opportunities
-for delete
-to authenticated
-using ((select auth.uid()) = recruiter_id);
-
 create policy "Recruiters can read applications for owned opportunities"
 on public.applications
 for select
@@ -295,22 +327,6 @@ using (
   )
 );
 
-create policy "Recruiters can record attendance for owned opportunities"
-on public.attendance_events
-for insert
-to authenticated
-with check (
-  recorded_by = (select auth.uid())
-  and exists (
-    select 1
-    from public.applications
-    join public.opportunities
-      on opportunities.id = applications.opportunity_id
-    where applications.id = attendance_events.application_id
-      and opportunities.recruiter_id = (select auth.uid())
-  )
-);
-
 create policy "Recruiters can read consents for owned opportunities"
 on public.consent_events
 for select
@@ -323,5 +339,6 @@ using (
       on opportunities.id = applications.opportunity_id
     where applications.id = consent_events.application_id
       and opportunities.recruiter_id = (select auth.uid())
+      and consent_events.consent_type = 'current_application'
   )
 );

@@ -22,27 +22,33 @@ export interface SubmitApplicationResult {
 }
 
 const answerValueSchema = z.union([
-  z.string(),
+  z.string().max(1_000),
   z.number(),
   z.boolean(),
   z.null(),
 ]);
 
-export const submitApplicationInputSchema = z.object({
-  opportunityId: z
-    .string()
-    .regex(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-    ),
-  applicant: z.object({
-    displayName: z.string().trim().min(1),
-    phone: z.string().trim().min(1),
-    birthDate: z.string(),
-  }),
-  answers: z.record(z.string(), answerValueSchema),
-  currentApplicationConsent: z.literal(true),
-  futureOpportunityConsent: z.boolean(),
-});
+export const submitApplicationInputSchema = z
+  .object({
+    opportunityId: z
+      .string()
+      .regex(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      ),
+    applicant: z
+      .object({
+        displayName: z.string().trim().min(1).max(100),
+        phone: z.string().trim().min(1).max(32),
+        birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+      .strip(),
+    answers: z
+      .record(z.string().min(1).max(100), answerValueSchema)
+      .refine((answers) => Object.keys(answers).length <= 50),
+    currentApplicationConsent: z.literal(true),
+    futureOpportunityConsent: z.boolean(),
+  })
+  .strip();
 
 export function parseSubmitApplicationInput(
   input: unknown,

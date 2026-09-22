@@ -52,7 +52,8 @@ interface OpportunityRow {
 }
 
 const corsHeaders = {
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Origin": "*",
   "Content-Type": "application/json",
@@ -95,6 +96,22 @@ export async function submitApplication(
     Date.parse(opportunity.closesAt) <= now.getTime()
   ) {
     throw new SubmissionError("This opportunity is closed.", 409);
+  }
+
+  const acceptedAnswerFields = new Set(
+    opportunity.rules
+      .filter((rule) => rule.field !== "isAdult")
+      .map((rule) => rule.field),
+  );
+  if (
+    Object.keys(parsedInput.answers).some(
+      (field) => !acceptedAnswerFields.has(field),
+    )
+  ) {
+    throw new SubmissionError(
+      "Answers contain fields not requested by this opportunity.",
+      400,
+    );
   }
 
   const evaluatedAnswers = {
@@ -154,9 +171,10 @@ function isAtLeast19(birthDate: string, currentDate: Date): boolean {
     return false;
   }
 
-  let age = currentDate.getUTCFullYear() - birthYear;
-  const currentMonth = currentDate.getUTCMonth() + 1;
-  const currentDay = currentDate.getUTCDate();
+  const businessDate = getSeoulDateParts(currentDate);
+  let age = businessDate.year - birthYear;
+  const currentMonth = businessDate.month;
+  const currentDay = businessDate.day;
   if (
     currentMonth < birthMonth ||
     (currentMonth === birthMonth && currentDay < birthDay)
@@ -165,6 +183,26 @@ function isAtLeast19(birthDate: string, currentDate: Date): boolean {
   }
 
   return age >= 19;
+}
+
+function getSeoulDateParts(date: Date): {
+  year: number;
+  month: number;
+  day: number;
+} {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const values = new Map(parts.map((part) => [part.type, part.value]));
+
+  return {
+    year: Number(values.get("year")),
+    month: Number(values.get("month")),
+    day: Number(values.get("day")),
+  };
 }
 
 export function createSupabaseDependencies(

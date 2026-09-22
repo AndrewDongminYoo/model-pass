@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(12);
+select plan(28);
 
 insert into auth.users (id, aud, role, email, encrypted_password)
 values
@@ -170,6 +170,11 @@ values
     '00000000-0000-0000-0000-000000000012',
     'current_application',
     true
+  ),
+  (
+    '00000000-0000-0000-0000-000000000011',
+    'future_opportunity',
+    true
   );
 
 insert into public.opportunities (
@@ -222,10 +227,21 @@ select public.submit_application_transaction(
 
 update public.opportunities
 set
+  ruleset_id = 'hair-promotion-updated',
   ruleset_version = 2,
   rules_snapshot = '[{"id":"replacement","field":"isAvailable","operator":"equals","expected":false,"effect":"hard_fail","reason":"Changed after submission."}]',
   updated_at = now()
 where id = '00000000-0000-0000-0000-000000000003';
+
+select is(
+  (
+    select applications.ruleset_id
+    from public.applications
+    join submitted_application_ids on submitted_application_ids.id = applications.id
+  ),
+  'hair-promotion',
+  'application keeps its submission-time ruleset identity'
+);
 
 select is(
   (
@@ -274,6 +290,137 @@ select results_eq(
   'transaction preserves current and future consent separately'
 );
 
+select throws_ok(
+  $$
+    select public.submit_application_transaction(
+      '00000000-0000-0000-0000-000000000003',
+      'Null consent applicant',
+      '010-0000-0004',
+      '2000-01-01',
+      '{"isAdult":true,"isAvailable":false}',
+      null,
+      false,
+      'hair-promotion-updated',
+      2,
+      '[{"id":"replacement","field":"isAvailable","operator":"equals","expected":false,"effect":"hard_fail","reason":"Changed after submission."}]',
+      '{"rulesetId":"hair-promotion-updated","rulesetVersion":2,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+    )
+  $$,
+  '22023',
+  'Current application consent is required.',
+  'transaction fails closed when current consent is null'
+);
+
+select throws_ok(
+  $$
+    select public.submit_application_transaction(
+      '00000000-0000-0000-0000-000000000003',
+      'Incomplete evaluation applicant',
+      '010-0000-0005',
+      '2000-01-01',
+      '{"isAdult":true,"isAvailable":false}',
+      true,
+      false,
+      'hair-promotion-updated',
+      2,
+      '[{"id":"replacement","field":"isAvailable","operator":"equals","expected":false,"effect":"hard_fail","reason":"Changed after submission."}]',
+      '{"rulesetId":"hair-promotion-updated","rulesetVersion":2,"eligible":true}'
+    )
+  $$,
+  '22023',
+  'Evaluation snapshot has an invalid shape.',
+  'transaction fails closed when evaluation evidence is incomplete'
+);
+
+select throws_ok(
+  $$
+    select public.submit_application_transaction(
+      '00000000-0000-0000-0000-000000000003',
+      'Stale rules applicant',
+      '010-0000-0006',
+      '2000-01-01',
+      '{"isAdult":true,"isAvailable":true}',
+      true,
+      false,
+      'hair-promotion',
+      1,
+      '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]',
+      '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+    )
+  $$,
+  '40001',
+  'Opportunity rules changed before submission.',
+  'transaction rejects a stale opportunity rules snapshot'
+);
+
+update public.opportunities
+set closed_at = now()
+where id = '00000000-0000-0000-0000-000000000003';
+
+select throws_ok(
+  $$
+    select public.submit_application_transaction(
+      '00000000-0000-0000-0000-000000000003',
+      'Closed opportunity applicant',
+      '010-0000-0007',
+      '2000-01-01',
+      '{"isAdult":true,"isAvailable":false}',
+      true,
+      false,
+      'hair-promotion-updated',
+      2,
+      '[{"id":"replacement","field":"isAvailable","operator":"equals","expected":false,"effect":"hard_fail","reason":"Changed after submission."}]',
+      '{"rulesetId":"hair-promotion-updated","rulesetVersion":2,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+    )
+  $$,
+  '22023',
+  'Opportunity is closed.',
+  'transaction rejects an opportunity with closed_at set'
+);
+
+update public.opportunities
+set status = 'draft'
+where id = '00000000-0000-0000-0000-000000000002';
+
+select throws_ok(
+  $$
+    select public.submit_application_transaction(
+      '00000000-0000-0000-0000-000000000002',
+      'Draft opportunity applicant',
+      '010-0000-0008',
+      '2000-01-01',
+      '{"isAdult":true}',
+      true,
+      false,
+      'makeup-certification',
+      1,
+      '[]',
+      '{"rulesetId":"makeup-certification","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+    )
+  $$,
+  'P0002',
+  'Opportunity not found.',
+  'transaction rejects an unpublished opportunity'
+);
+
+select ok(
+  not has_function_privilege(
+    'anon',
+    'public.submit_application_transaction(uuid,text,text,date,jsonb,boolean,boolean,text,integer,jsonb,jsonb)',
+    'EXECUTE'
+  ),
+  'anonymous role cannot execute the submission transaction'
+);
+
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.submit_application_transaction(uuid,text,text,date,jsonb,boolean,boolean,text,integer,jsonb,jsonb)',
+    'EXECUTE'
+  ),
+  'authenticated role cannot execute the submission transaction'
+);
+
 set local role authenticated;
 select set_config(
   'request.jwt.claims',
@@ -319,10 +466,96 @@ select is(
   'recruiter reads attendance only for owned opportunities'
 );
 
-select is(
-  (select count(*)::bigint from public.consent_events),
-  1::bigint,
-  'recruiter reads consents only for owned opportunities'
+select results_eq(
+  $$ select consent_type from public.consent_events order by consent_type $$,
+  $$ values ('current_application'::text) $$,
+  'recruiter reads current-application consent but not future consent'
+);
+
+select throws_ok(
+  $$
+    insert into public.applications (
+      opportunity_id,
+      applicant_display_name,
+      applicant_phone,
+      applicant_birth_date,
+      ruleset_id,
+      ruleset_version,
+      rules_snapshot,
+      evaluation_snapshot
+    )
+    values (
+      '00000000-0000-0000-0000-000000000001',
+      'Direct write applicant',
+      '010-1111-1111',
+      '2000-01-01',
+      'hair-promotion',
+      1,
+      '[]',
+      '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+    )
+  $$,
+  '42501',
+  'new row violates row-level security policy for table "applications"',
+  'authenticated recruiters cannot insert applications directly'
+);
+
+select throws_ok(
+  $$
+    insert into public.application_answers (application_id, field, value)
+    values ('00000000-0000-0000-0000-000000000011', 'extra', 'true')
+  $$,
+  '42501',
+  'new row violates row-level security policy for table "application_answers"',
+  'authenticated recruiters cannot insert application answers directly'
+);
+
+select throws_ok(
+  $$
+    insert into public.application_photos (application_id, storage_path, expires_at)
+    values (
+      '00000000-0000-0000-0000-000000000011',
+      'applications/11/direct.jpg',
+      '2099-10-22T03:00:00Z'
+    )
+  $$,
+  '42501',
+  'new row violates row-level security policy for table "application_photos"',
+  'authenticated recruiters cannot insert application photos directly'
+);
+
+select throws_ok(
+  $$
+    insert into public.attendance_events (
+      application_id,
+      recorded_by,
+      party,
+      event_type
+    )
+    values (
+      '00000000-0000-0000-0000-000000000011',
+      '10000000-0000-4000-8000-000000000001',
+      'recruiter',
+      'completed'
+    )
+  $$,
+  '42501',
+  'new row violates row-level security policy for table "attendance_events"',
+  'authenticated recruiters cannot insert attendance directly'
+);
+
+select throws_ok(
+  $$
+    insert into public.consent_events (application_id, consent_type, granted)
+    values (
+      '00000000-0000-0000-0000-000000000011',
+      'future_opportunity',
+      true
+    )
+  $$,
+  '42501',
+  'new row violates row-level security policy for table "consent_events"',
+  'authenticated recruiters cannot insert consent directly'
 );
 
 reset role;
@@ -359,6 +592,47 @@ select throws_ok(
   '42501',
   'new row violates row-level security policy for table "applications"',
   'anonymous clients cannot insert applications directly'
+);
+
+reset role;
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"10000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+
+select results_eq(
+  $$
+    delete from public.opportunities
+    where id = '00000000-0000-0000-0000-000000000001'
+    returning id
+  $$,
+  $$ select null::uuid where false $$,
+  'authenticated recruiters cannot delete owned opportunities'
+);
+
+reset role;
+
+select throws_ok(
+  $$
+    delete from public.opportunities
+    where id = '00000000-0000-0000-0000-000000000003'
+  $$,
+  '23503',
+  'update or delete on table "opportunities" violates foreign key constraint "applications_opportunity_id_fkey" on table "applications"',
+  'retained applications prevent privileged opportunity deletion'
+);
+
+select throws_ok(
+  $$
+    delete from auth.users
+    where id = '20000000-0000-4000-8000-000000000002'
+  $$,
+  '23503',
+  'update or delete on table "users" violates foreign key constraint "opportunities_recruiter_id_fkey" on table "opportunities"',
+  'retained opportunities prevent privileged recruiter deletion'
 );
 
 select * from finish();

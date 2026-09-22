@@ -22,7 +22,7 @@ export async function submitApplication(
   return data;
 }
 
-function isSubmitApplicationResult(
+export function isSubmitApplicationResult(
   value: unknown,
 ): value is SubmitApplicationResult {
   if (typeof value !== "object" || value === null) {
@@ -30,10 +30,18 @@ function isSubmitApplicationResult(
   }
 
   const result = value as Partial<SubmitApplicationResult>;
+  const evaluation = result.evaluation;
   return (
     typeof result.applicationId === "string" &&
-    typeof result.evaluation === "object" &&
-    result.evaluation !== null &&
-    typeof result.evaluation.eligible === "boolean"
+    typeof evaluation === "object" &&
+    evaluation !== null &&
+    typeof evaluation.rulesetId === "string" &&
+    evaluation.rulesetId.length > 0 &&
+    Number.isInteger(evaluation.rulesetVersion) &&
+    evaluation.rulesetVersion > 0 &&
+    typeof evaluation.eligible === "boolean" &&
+    Array.isArray(evaluation.failures) &&
+    Array.isArray(evaluation.reviews) &&
+    Array.isArray(evaluation.reminders)
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
+  RecruiterAuthenticationError,
   getRecruiterApplications,
   type RecruiterApplication,
 } from "../../applications/api/application-photos";
@@ -27,17 +28,22 @@ export function ApplicationsPage() {
         if (active) {
           setResult({
             opportunityId,
-            applications: [...loaded].sort((left, right) =>
-              left.createdAt.localeCompare(right.createdAt),
+            applications: [...loaded].sort(
+              (left, right) =>
+                left.createdAt.localeCompare(right.createdAt) ||
+                left.id.localeCompare(right.id),
             ),
           });
         }
       })
-      .catch(() => {
+      .catch((loadError: unknown) => {
         if (active) {
           setResult({
             opportunityId,
-            error: "Could not load applications.",
+            error:
+              loadError instanceof RecruiterAuthenticationError
+                ? loadError.message
+                : "Could not load applications.",
           });
         }
       });

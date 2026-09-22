@@ -46,11 +46,16 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
       <section aria-label="Deterministic evaluation">
         <h3>Deterministic evaluation</h3>
         <p>{application.evaluation.eligible ? "Eligible" : "Not eligible"}</p>
+        <p>
+          Ruleset: {application.evaluation.rulesetId} v
+          {application.evaluation.rulesetVersion}
+        </p>
         {outcomes.length > 0 ? (
           <ul>
             {outcomes.map((outcome) => (
               <li key={`${outcome.effect}-${outcome.ruleId}`}>
-                {outcome.effect}: {outcome.reason}
+                {outcome.ruleId} — input: {String(outcome.input)}; effect:{" "}
+                {outcome.effect}; reason: {outcome.reason}
               </li>
             ))}
           </ul>

@@ -2,8 +2,11 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const BUCKET_ID = "application-photos";
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const MAX_GRANT_BODY_BYTES = 4 * 1024;
 const UPLOAD_LIFETIME_SECONDS = 600;
 const RETENTION_DAYS = 30;
+const DOCUMENTED_SIGNING_SECRET_PLACEHOLDER =
+  "replace-with-at-least-32-random-bytes";
 const ALLOWED_CONTENT_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -19,6 +22,7 @@ export interface PhotoApplication {
   submissionAttemptId: string;
   closesAt: string;
   closedAt: string | null;
+  status: string;
 }
 
 interface PhotoApplicationLookup {
@@ -36,6 +40,8 @@ export interface PhotoMetadata {
   expiresAt: string;
 }
 
+export type PhotoUploadReservation = Omit<PhotoMetadata, "expiresAt">;
+
 export interface PhotoUploadDependencies {
   now: () => Date;
   createPhotoId: () => string;
@@ -43,6 +49,7 @@ export interface PhotoUploadDependencies {
   loadApplication: (
     input: PhotoApplicationLookup,
   ) => Promise<PhotoApplication | null>;
+  reserveUpload: (reservation: PhotoUploadReservation) => Promise<void>;
   uploadObject: (
     path: string,
     body: Uint8Array,
@@ -51,6 +58,7 @@ export interface PhotoUploadDependencies {
   ) => Promise<void>;
   insertMetadata: (metadata: PhotoMetadata) => Promise<void>;
   removeObject: (path: string) => Promise<void>;
+  releaseReservation: (storagePath: string) => Promise<void>;
   reportError: (message: string, error: unknown) => void;
 }
 
@@ -63,7 +71,6 @@ interface UploadClaims extends UploadGrantInput {
   photoId: string;
   storagePath: string;
   expiresAtSeconds: number;
-  retentionExpiresAt: string;
 }
 
 interface ApplicationRow {
@@ -75,6 +82,7 @@ interface ApplicationRow {
 interface OpportunityRow {
   closes_at: string;
   closed_at: string | null;
+  status: string;
 }
 
 const corsHeaders = {
@@ -107,11 +115,14 @@ export function createPhotoUploadHandler(
     try {
       if (request.method === "POST") {
         const functionUrl = fixedFunctionUrl ?? baseRequestUrl(request.url);
-        const input = parseGrantInput(await request.json());
+        const input = parseGrantInput(
+          await readBoundedJson(request, MAX_GRANT_BODY_BYTES),
+        );
         const application = await dependencies.loadApplication(input);
         if (application === null) {
           throw new PhotoUploadError("Application not found.", 404);
         }
+        assertUploadWindowOpen(application, dependencies.now());
 
         const photoId = dependencies.createPhotoId();
         const storagePath =
@@ -120,19 +131,11 @@ export function createPhotoUploadHandler(
         const expiresAtSeconds =
           Math.floor(dependencies.now().getTime() / 1_000) +
           UPLOAD_LIFETIME_SECONDS;
-        const retentionBase = new Date(
-          application.closedAt ?? application.closesAt,
-        );
-        const retentionExpiresAt = new Date(retentionBase);
-        retentionExpiresAt.setUTCDate(
-          retentionExpiresAt.getUTCDate() + RETENTION_DAYS,
-        );
         const claims: UploadClaims = {
           ...input,
           photoId,
           storagePath,
           expiresAtSeconds,
-          retentionExpiresAt: retentionExpiresAt.toISOString(),
         };
         const token = await signClaims(claims, dependencies.signingSecret);
         const uploadUrl = new URL(functionUrl);
@@ -176,46 +179,67 @@ export function createPhotoUploadHandler(
           );
         }
 
-        const contentLength = request.headers.get("Content-Length");
-        if (
-          contentLength !== null &&
-          Number.parseInt(contentLength, 10) !== claims.byteSize
-        ) {
-          throw new PhotoUploadError(
-            "Photo size does not match the grant.",
-            413,
-          );
+        validateContentLength(
+          request.headers.get("Content-Length"),
+          claims.byteSize,
+          claims.byteSize,
+        );
+        const application = await dependencies.loadApplication(claims);
+        if (application === null) {
+          throw new PhotoUploadError("Application not found.", 404);
         }
-        const body = new Uint8Array(await request.arrayBuffer());
-        if (
-          body.byteLength !== claims.byteSize ||
-          body.byteLength > MAX_PHOTO_BYTES
-        ) {
+        assertUploadWindowOpen(application, dependencies.now());
+
+        const body = await readBoundedBytes(request, claims.byteSize);
+        if (body.byteLength !== claims.byteSize) {
           throw new PhotoUploadError(
             "Photo size does not match the grant.",
             413,
           );
         }
 
-        await dependencies.uploadObject(
-          claims.storagePath,
-          body,
-          claims.contentType,
-          { upsert: false },
-        );
+        const reservation: PhotoUploadReservation = {
+          id: claims.photoId,
+          applicationId: claims.applicationId,
+          storagePath: claims.storagePath,
+          contentType: claims.contentType,
+          byteSize: claims.byteSize,
+        };
+        await dependencies.reserveUpload(reservation);
 
         try {
+          await dependencies.uploadObject(
+            claims.storagePath,
+            body,
+            claims.contentType,
+            { upsert: false },
+          );
+        } catch (error) {
+          await releaseReservationAfterFailure(
+            dependencies,
+            claims.storagePath,
+          );
+          throw error;
+        }
+
+        try {
+          const currentApplication = await dependencies.loadApplication(claims);
+          if (currentApplication === null) {
+            throw new PhotoUploadError("Application not found.", 404);
+          }
+          assertUploadWindowOpen(currentApplication, dependencies.now());
+          const retentionExpiresAt = retentionFor(currentApplication);
           await dependencies.insertMetadata({
-            id: claims.photoId,
-            applicationId: claims.applicationId,
-            storagePath: claims.storagePath,
-            contentType: claims.contentType,
-            byteSize: claims.byteSize,
-            expiresAt: claims.retentionExpiresAt,
+            ...reservation,
+            expiresAt: retentionExpiresAt,
           });
         } catch (error) {
           try {
             await dependencies.removeObject(claims.storagePath);
+            await releaseReservationAfterFailure(
+              dependencies,
+              claims.storagePath,
+            );
           } catch (compensationError) {
             dependencies.reportError(
               "Photo upload compensation failed.",
@@ -223,6 +247,15 @@ export function createPhotoUploadHandler(
             );
           }
           throw error;
+        }
+
+        try {
+          await dependencies.releaseReservation(claims.storagePath);
+        } catch (error) {
+          dependencies.reportError(
+            "Photo upload reservation cleanup failed.",
+            error,
+          );
         }
 
         return jsonResponse({ photoId: claims.photoId }, 201);
@@ -334,13 +367,118 @@ function parseClaims(value: unknown): UploadClaims {
     claims.storagePath !==
       `opportunity/${input.opportunityId}/application/${input.applicationId}/${claims.photoId}` ||
     typeof claims.expiresAtSeconds !== "number" ||
-    !Number.isSafeInteger(claims.expiresAtSeconds) ||
-    typeof claims.retentionExpiresAt !== "string" ||
-    !Number.isFinite(Date.parse(claims.retentionExpiresAt))
+    !Number.isSafeInteger(claims.expiresAtSeconds)
   ) {
     throw new PhotoUploadError("Invalid upload grant.", 401);
   }
   return claims;
+}
+
+export function validatePhotoUploadSigningSecret(
+  secret: string | undefined,
+): string {
+  if (
+    secret === undefined ||
+    secret === DOCUMENTED_SIGNING_SECRET_PLACEHOLDER ||
+    new TextEncoder().encode(secret).byteLength < 32
+  ) {
+    throw new Error(
+      "PHOTO_UPLOAD_SIGNING_SECRET must contain at least 32 random UTF-8 bytes and must not use the documented placeholder.",
+    );
+  }
+  return secret;
+}
+
+function assertUploadWindowOpen(
+  application: PhotoApplication,
+  now: Date,
+): void {
+  if (
+    application.status !== "published" ||
+    application.closedAt !== null ||
+    Date.parse(application.closesAt) <= now.getTime()
+  ) {
+    throw new PhotoUploadError("Photo uploads are closed.", 409);
+  }
+}
+
+function retentionFor(application: PhotoApplication): string {
+  const retentionBase = new Date(application.closedAt ?? application.closesAt);
+  const expiresAt = new Date(retentionBase);
+  expiresAt.setUTCDate(expiresAt.getUTCDate() + RETENTION_DAYS);
+  return expiresAt.toISOString();
+}
+
+async function readBoundedJson(
+  request: Request,
+  maximumBytes: number,
+): Promise<unknown> {
+  validateContentLength(request.headers.get("Content-Length"), maximumBytes);
+  const bytes = await readBoundedBytes(request, maximumBytes);
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function validateContentLength(
+  header: string | null,
+  maximumBytes: number,
+  exactBytes?: number,
+): void {
+  if (header === null) {
+    return;
+  }
+  if (!/^(0|[1-9][0-9]*)$/.test(header)) {
+    throw new PhotoUploadError("Invalid Content-Length header.", 400);
+  }
+  const length = Number(header);
+  if (
+    length > maximumBytes ||
+    (exactBytes !== undefined && length !== exactBytes)
+  ) {
+    throw new PhotoUploadError("Request body exceeds its allowed size.", 413);
+  }
+}
+
+async function readBoundedBytes(
+  request: Request,
+  maximumBytes: number,
+): Promise<Uint8Array> {
+  if (request.body === null) {
+    return new Uint8Array();
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    totalBytes += value.byteLength;
+    if (totalBytes > maximumBytes) {
+      await reader.cancel();
+      throw new PhotoUploadError("Request body exceeds its allowed size.", 413);
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
+async function releaseReservationAfterFailure(
+  dependencies: PhotoUploadDependencies,
+  storagePath: string,
+): Promise<void> {
+  try {
+    await dependencies.releaseReservation(storagePath);
+  } catch (error) {
+    dependencies.reportError("Photo upload reservation cleanup failed.", error);
+  }
 }
 
 async function hmac(payload: string, secret: string): Promise<Uint8Array> {
@@ -399,10 +537,12 @@ export function createSupabaseDependencies(
   client: SupabaseClient,
   signingSecret: string,
 ): PhotoUploadDependencies {
+  const validatedSigningSecret =
+    validatePhotoUploadSigningSecret(signingSecret);
   return {
     now: () => new Date(),
     createPhotoId: () => crypto.randomUUID(),
-    signingSecret,
+    signingSecret: validatedSigningSecret,
     async loadApplication(input) {
       const { data: application, error: applicationError } = await client
         .from("applications")
@@ -422,7 +562,7 @@ export function createSupabaseDependencies(
 
       const { data: opportunity, error: opportunityError } = await client
         .from("opportunities")
-        .select("closes_at, closed_at")
+        .select("closes_at, closed_at, status")
         .eq("id", application.opportunity_id)
         .maybeSingle<OpportunityRow>();
       if (opportunityError !== null) {
@@ -440,7 +580,28 @@ export function createSupabaseDependencies(
         submissionAttemptId: application.submission_attempt_id,
         closesAt: opportunity.closes_at,
         closedAt: opportunity.closed_at,
+        status: opportunity.status,
       };
+    },
+    async reserveUpload(reservation) {
+      const { error } = await client
+        .from("application_photo_upload_reservations")
+        .insert({
+          id: reservation.id,
+          application_id: reservation.applicationId,
+          storage_path: reservation.storagePath,
+          content_type: reservation.contentType,
+          byte_size: reservation.byteSize,
+        });
+      if (error !== null) {
+        if (error.code === "23505") {
+          throw new PhotoUploadError(
+            "This photo upload was already used.",
+            409,
+          );
+        }
+        throw new Error(`Failed to reserve photo upload: ${error.message}`);
+      }
     },
     async uploadObject(path, body, contentType, options) {
       const { error } = await client.storage
@@ -472,6 +633,15 @@ export function createSupabaseDependencies(
         throw new Error(`Failed to remove photo: ${error.message}`);
       }
     },
+    async releaseReservation(storagePath) {
+      const { error } = await client
+        .from("application_photo_upload_reservations")
+        .delete()
+        .eq("storage_path", storagePath);
+      if (error !== null) {
+        throw new Error(`Failed to release photo upload: ${error.message}`);
+      }
+    },
     reportError(message, error) {
       console.error(message, error);
     },
@@ -481,7 +651,9 @@ export function createSupabaseDependencies(
 if (import.meta.main) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const signingSecret = Deno.env.get("PHOTO_UPLOAD_SIGNING_SECRET");
+  const signingSecret = validatePhotoUploadSigningSecret(
+    Deno.env.get("PHOTO_UPLOAD_SIGNING_SECRET"),
+  );
   if (
     supabaseUrl === undefined ||
     serviceRoleKey === undefined ||

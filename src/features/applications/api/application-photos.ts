@@ -49,6 +49,13 @@ interface RecruiterApplicationRow {
   }>;
 }
 
+export class RecruiterAuthenticationError extends Error {
+  constructor() {
+    super("Sign in to review applications.");
+    this.name = "RecruiterAuthenticationError";
+  }
+}
+
 export async function uploadApplicationPhoto(input: {
   applicationId: string;
   opportunityId: string;
@@ -118,18 +125,35 @@ export async function createPhotoViewUrl(
 export async function getRecruiterApplications(
   opportunityId: string,
 ): Promise<RecruiterApplication[]> {
-  const { data, error } = await getSupabaseClient()
+  const client = getSupabaseClient();
+  const { data: authData, error: authError } = await client.auth.getUser();
+  if (authError !== null || authData.user === null) {
+    throw new RecruiterAuthenticationError();
+  }
+
+  const { data, error } = await client
     .from("applications")
     .select(
       "id, created_at, applicant_display_name, applicant_phone, evaluation_snapshot, application_answers(field, value), application_photos(id, content_type, byte_size), attendance_events(id, party, event_type, occurred_at)",
     )
     .eq("opportunity_id", opportunityId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
   if (error !== null) {
     throw new Error(`Could not load applications: ${error.message}`);
   }
 
-  return (data as RecruiterApplicationRow[]).map(parseRecruiterApplication);
+  return (data as RecruiterApplicationRow[])
+    .map(parseRecruiterApplication)
+    .sort(compareApplications);
+}
+
+function compareApplications(
+  left: RecruiterApplication,
+  right: RecruiterApplication,
+): number {
+  const timeOrder = left.createdAt.localeCompare(right.createdAt);
+  return timeOrder === 0 ? left.id.localeCompare(right.id) : timeOrder;
 }
 
 function validatePhoto(file: File): void {

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(36);
+select plan(39);
 
 select is(
   (select public from storage.buckets where id = 'application-photos'),
@@ -59,13 +59,41 @@ select is(
       'public.applications'::regclass,
       'public.application_answers'::regclass,
       'public.application_photos'::regclass,
+      'public.application_photo_upload_reservations'::regclass,
       'public.attendance_events'::regclass,
       'public.consent_events'::regclass
     )
       and relrowsecurity
   ),
-  6::bigint,
+  7::bigint,
   'RLS is enabled on every user-owned table'
+);
+
+select ok(
+  not has_table_privilege(
+    'authenticated',
+    'public.application_photo_upload_reservations',
+    'SELECT'
+  ),
+  'authenticated users have no reservation read privilege'
+);
+
+select ok(
+  not has_table_privilege(
+    'anon',
+    'public.application_photo_upload_reservations',
+    'SELECT'
+  ),
+  'anonymous users have no reservation read privilege'
+);
+
+select ok(
+  has_table_privilege(
+    'service_role',
+    'public.application_photo_upload_reservations',
+    'SELECT, INSERT, UPDATE, DELETE'
+  ),
+  'service role owns reservation reconciliation privileges'
 );
 
 insert into public.opportunities (
@@ -186,6 +214,21 @@ values
     4,
     '2099-10-22T03:00:00Z'
   );
+
+insert into public.application_photo_upload_reservations (
+  id,
+  application_id,
+  storage_path,
+  content_type,
+  byte_size
+)
+values (
+  '00000000-0000-4000-8000-000000000024',
+  '00000000-0000-0000-0000-000000000011',
+  'opportunity/00000000-0000-0000-0000-000000000001/application/00000000-0000-0000-0000-000000000011/00000000-0000-4000-8000-000000000024',
+  'image/jpeg',
+  6
+);
 
 insert into public.attendance_events (
   application_id,

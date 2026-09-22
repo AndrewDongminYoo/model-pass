@@ -50,6 +50,8 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   const [submitError, setSubmitError] = useState<string>();
   const [pending, setPending] = useState(false);
   const [receiptId, setReceiptId] = useState<string>();
+  const [receiptEvaluation, setReceiptEvaluation] =
+    useState<EvaluationResult>();
   const [photo, setPhoto] = useState<File>();
   const [photoError, setPhotoError] = useState<string>();
   const [photoPending, setPhotoPending] = useState(false);
@@ -62,30 +64,32 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         <h2 id="application-received-heading">Application received</h2>
         <p>Receipt: {receiptId}</p>
         <p>Keep this private receipt for your records.</p>
-        <div>
-          <label htmlFor="job-specific-photo">Job-specific photo</label>
-          <input
-            id="job-specific-photo"
-            type="file"
-            accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
-            disabled={photoPending || photoUploaded}
-            onChange={(event) => {
-              setPhoto(event.currentTarget.files?.[0]);
-              setPhotoError(undefined);
-              setPhotoUploaded(false);
-            }}
-          />
-          <p>JPEG, PNG, HEIC, or HEIF. Maximum 10 MiB.</p>
-          <button
-            type="button"
-            disabled={photo === undefined || photoPending || photoUploaded}
-            onClick={() => void handlePhotoUpload(receiptId)}
-          >
-            {photoPending ? "Uploading photo" : "Upload photo"}
-          </button>
-          {photoError ? <p role="alert">{photoError}</p> : null}
-          {photoUploaded ? <p>Photo uploaded privately.</p> : null}
-        </div>
+        {hasRequestedPhotoOutcome(opportunity, receiptEvaluation) ? (
+          <div>
+            <label htmlFor="job-specific-photo">Job-specific photo</label>
+            <input
+              id="job-specific-photo"
+              type="file"
+              accept="image/jpeg,image/png,image/heic,image/heif,.heic,.heif"
+              disabled={photoPending || photoUploaded}
+              onChange={(event) => {
+                setPhoto(event.currentTarget.files?.[0]);
+                setPhotoError(undefined);
+                setPhotoUploaded(false);
+              }}
+            />
+            <p>JPEG, PNG, HEIC, or HEIF. Maximum 10 MiB.</p>
+            <button
+              type="button"
+              disabled={photo === undefined || photoPending || photoUploaded}
+              onClick={() => void handlePhotoUpload(receiptId)}
+            >
+              {photoPending ? "Uploading photo" : "Upload photo"}
+            </button>
+            {photoError ? <p role="alert">{photoError}</p> : null}
+            {photoUploaded ? <p>Photo uploaded privately.</p> : null}
+          </div>
+        ) : null}
       </section>
     );
   }
@@ -167,6 +171,7 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         futureOpportunityConsent: contact.futureOpportunityConsent,
       });
       setReceiptId(result.applicationId);
+      setReceiptEvaluation(result.evaluation);
     } catch (error) {
       if (error instanceof ApplicationSubmissionError) {
         if (error.evaluation !== undefined && !error.evaluation.eligible) {
@@ -253,6 +258,33 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         </form>
       ) : null}
     </>
+  );
+}
+
+function hasRequestedPhotoOutcome(
+  opportunity: PublicOpportunity,
+  evaluation: EvaluationResult | undefined,
+): boolean {
+  if (
+    evaluation === undefined ||
+    evaluation.rulesetId !== opportunity.rulesetId ||
+    evaluation.rulesetVersion !== opportunity.rulesetVersion
+  ) {
+    return false;
+  }
+  const requestedPhotoRuleIds = new Set(
+    opportunity.rules
+      .filter(
+        (rule) =>
+          rule.effect === "needs_review" &&
+          rule.field.toLowerCase().includes("photo"),
+      )
+      .map((rule) => rule.id),
+  );
+  return evaluation.reviews.some(
+    (outcome) =>
+      outcome.effect === "needs_review" &&
+      requestedPhotoRuleIds.has(outcome.ruleId),
   );
 }
 

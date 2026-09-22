@@ -4,7 +4,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "../../../app/App";
 import type { PublicOpportunity } from "../../applications/api/get-public-opportunity";
-import type { RecruiterApplication } from "../../applications/api/application-photos";
+import {
+  RecruiterAuthenticationError,
+  type RecruiterApplication,
+} from "../../applications/api/application-photos";
 import { ApplicationForm } from "../../applications/components/ApplicationForm";
 import { ApplicationCard } from "./ApplicationCard";
 import { ApplicationsPage } from "../routes/ApplicationsPage";
@@ -185,6 +188,71 @@ it("does not claim photo success until the storage upload completes", async () =
   expect(await screen.findByText("Photo uploaded privately.")).toBeVisible();
 });
 
+it("does not offer photo upload without a stored needs-review photo outcome", async () => {
+  // Production break: showing photo collection for every receipt gathers sensitive content the job did not request.
+  const user = userEvent.setup();
+  submitApplicationMock.mockResolvedValue({
+    ...successfulSubmission(),
+    evaluation: {
+      ...successfulSubmission().evaluation,
+      reviews: [],
+    },
+  });
+  render(
+    <ApplicationForm
+      opportunity={{ ...opportunity, rules: opportunity.rules.slice(0, 2) }}
+    />,
+  );
+
+  await submitEligibleApplication(user);
+
+  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+});
+
+it("does not treat a non-needs-review outcome as photo authority", async () => {
+  // Production break: matching only the rule ID can collect a photo from a malformed non-review outcome.
+  const user = userEvent.setup();
+  submitApplicationMock.mockResolvedValue({
+    ...successfulSubmission(),
+    evaluation: {
+      ...successfulSubmission().evaluation,
+      reviews: [
+        {
+          ruleId: "photo-required",
+          reason: "Upload the requested job-specific photo.",
+          effect: "hard_fail",
+          input: null,
+        },
+      ],
+    },
+  });
+  render(<ApplicationForm opportunity={opportunity} />);
+
+  await submitEligibleApplication(user);
+
+  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+});
+
+it("does not use a photo outcome from a different stored ruleset", async () => {
+  // Production break: a stale evaluation can request sensitive content for rules that are not this job's snapshot.
+  const user = userEvent.setup();
+  submitApplicationMock.mockResolvedValue({
+    ...successfulSubmission(),
+    evaluation: {
+      ...successfulSubmission().evaluation,
+      rulesetVersion: 2,
+    },
+  });
+  render(<ApplicationForm opportunity={opportunity} />);
+
+  await submitEligibleApplication(user);
+
+  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+});
+
 it("renders deterministic evidence, private photos, and factual attendance without ranking UI", async () => {
   // Production break: omitting stored evidence or adding inferred ranking changes recruiter review into scoring.
   const user = userEvent.setup();
@@ -200,6 +268,12 @@ it("renders deterministic evidence, private photos, and factual attendance witho
   expect(screen.getByText("Applicant one")).toBeVisible();
   expect(screen.getByText("2026-09-22T03:00:00.000Z")).toBeVisible();
   expect(screen.getByText("Eligible")).toBeVisible();
+  expect(screen.getByText("Ruleset: hair-promotion v1")).toBeVisible();
+  expect(
+    screen.getByText(
+      "photo-required — input: null; effect: needs_review; reason: Upload the requested job-specific photo.",
+    ),
+  ).toBeVisible();
   expect(screen.getByText("isAvailable: true")).toBeVisible();
   expect(screen.getByText("applicant: completed")).toBeVisible();
   expect(
@@ -218,8 +292,8 @@ it("renders deterministic evidence, private photos, and factual attendance witho
 it("keeps recruiter applications in chronological submission order", async () => {
   // Production break: rendering response order without enforcing created_at ASC presents a hidden ranking.
   getRecruiterApplicationsMock.mockResolvedValue([
-    application("Later applicant", "2026-09-22T04:00:00.000Z", "102"),
-    application("Earlier applicant", "2026-09-22T03:00:00.000Z", "101"),
+    application("Later ID applicant", "2026-09-22T03:00:00.000Z", "102"),
+    application("Earlier ID applicant", "2026-09-22T03:00:00.000Z", "101"),
   ]);
   render(
     <MemoryRouter
@@ -237,10 +311,36 @@ it("keeps recruiter applications in chronological submission order", async () =>
   );
 
   const cards = await screen.findAllByRole("article");
-  expect(within(cards[0]).getByText("Earlier applicant")).toBeVisible();
-  expect(within(cards[1]).getByText("Later applicant")).toBeVisible();
+  expect(within(cards[0]).getByText("Earlier ID applicant")).toBeVisible();
+  expect(within(cards[1]).getByText("Later ID applicant")).toBeVisible();
   expect(getRecruiterApplicationsMock).toHaveBeenCalledWith(opportunityId);
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+});
+
+it("renders an authentication error instead of an anonymous empty state", async () => {
+  // Production break: RLS returns no anonymous rows, which can be misreported as a valid empty list.
+  getRecruiterApplicationsMock.mockRejectedValue(
+    new RecruiterAuthenticationError(),
+  );
+  render(
+    <MemoryRouter
+      initialEntries={[
+        `/recruiter/opportunities/${opportunityId}/applications`,
+      ]}
+    >
+      <Routes>
+        <Route
+          path="/recruiter/opportunities/:opportunityId/applications"
+          element={<ApplicationsPage />}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Sign in to review applications.",
+  );
+  expect(screen.queryByText("No applications yet.")).not.toBeInTheDocument();
 });
 
 it("exposes the recruiter applications route", async () => {
@@ -286,6 +386,14 @@ const opportunity: PublicOpportunity = {
       effect: "hard_fail",
       reason: "This schedule is unavailable.",
     },
+    {
+      id: "photo-required",
+      field: "requestedPhoto",
+      operator: "equals",
+      expected: true,
+      effect: "needs_review",
+      reason: "Upload the requested job-specific photo.",
+    },
   ],
 };
 
@@ -304,7 +412,14 @@ function application(
       rulesetVersion: 1,
       eligible: true,
       failures: [],
-      reviews: [],
+      reviews: [
+        {
+          ruleId: "photo-required",
+          reason: "Upload the requested job-specific photo.",
+          effect: "needs_review",
+          input: null,
+        },
+      ],
       reminders: [],
     },
     answers: [{ field: "isAvailable", value: true }],
@@ -347,7 +462,14 @@ function successfulSubmission() {
       rulesetVersion: 1,
       eligible: true,
       failures: [],
-      reviews: [],
+      reviews: [
+        {
+          ruleId: "photo-required",
+          reason: "Upload the requested job-specific photo.",
+          effect: "needs_review",
+          input: null,
+        },
+      ],
       reminders: [],
     },
   };

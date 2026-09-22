@@ -1,18 +1,28 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
+import { useParams } from "react-router-dom";
 import {
   createPhotoViewUrl,
   type RecruiterApplication,
 } from "../../applications/api/application-photos";
 import { AttendanceSummary } from "../../attendance/components/AttendanceSummary";
+import { AttendanceManager } from "../../attendance/components/AttendanceManager";
+import { selectApplication } from "../../applications/api/attendance";
 
 interface ApplicationCardProps {
   application: RecruiterApplication;
 }
 
 export function ApplicationCard({ application }: ApplicationCardProps) {
+  const { opportunityId } = useParams<{ opportunityId: string }>();
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const [photoErrors, setPhotoErrors] = useState<Record<string, string>>({});
   const [pendingPhotoId, setPendingPhotoId] = useState<string>();
+  const [selected, setSelected] = useState<boolean>();
+  const [selectionPending, setSelectionPending] = useState(false);
+  const [selectionError, setSelectionError] = useState<string>();
+  const handleSelectionStatus = useCallback((value: boolean) => {
+    setSelected(value);
+  }, []);
 
   async function requestPhoto(photoId: string) {
     setPendingPhotoId(photoId);
@@ -27,6 +37,20 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
       }));
     } finally {
       setPendingPhotoId(undefined);
+    }
+  }
+
+  async function select() {
+    if (opportunityId === undefined || selectionPending) return;
+    setSelectionPending(true);
+    setSelectionError(undefined);
+    try {
+      await selectApplication({ applicationId: application.id, opportunityId });
+      setSelected(true);
+    } catch {
+      setSelectionError("Could not select this application. Try again.");
+    } finally {
+      setSelectionPending(false);
     }
   }
 
@@ -103,10 +127,34 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
           );
         })}
       </section>
-      <AttendanceSummary
-        events={application.attendance}
-        viewerParty="recruiter"
-      />
+      {opportunityId === undefined ? (
+        <AttendanceSummary
+          events={application.attendance}
+          viewerParty="recruiter"
+        />
+      ) : (
+        <>
+          {selected === false ? (
+            <button
+              type="button"
+              disabled={selectionPending}
+              onClick={() => void select()}
+            >
+              {selectionPending
+                ? "Selecting application"
+                : "Select application"}
+            </button>
+          ) : null}
+          {selectionError ? <p role="alert">{selectionError}</p> : null}
+          <AttendanceManager
+            key={selected === true ? "selected" : "pending"}
+            capability={{ applicationId: application.id, opportunityId }}
+            viewerParty="recruiter"
+            initialEvents={application.attendance}
+            onSelectionStatus={handleSelectionStatus}
+          />
+        </>
+      )}
     </article>
   );
 }

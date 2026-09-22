@@ -41,5 +41,14 @@ verify_jwt = true
 [functions.record-attendance]
 verify_jwt = false
 
+[functions.get-attendance]
+verify_jwt = false
+
+[functions.select-application]
+verify_jwt = true
+
+[functions.manage-applicant-privacy]
+verify_jwt = false
+
 [functions.cleanup-expired-photos]
 verify_jwt = false

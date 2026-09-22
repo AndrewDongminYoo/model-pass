@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { publishOpportunity } from "../api/publish-opportunity";
 import { OpportunityForm } from "../components/OpportunityForm";
 import { OpportunityPreview } from "../components/OpportunityPreview";
 import type { OpportunityDraft } from "../domain/opportunity";
@@ -15,6 +16,7 @@ export function NewOpportunityPage() {
       {draft && (
         <OpportunityPreview
           draft={draft}
+          onPublish={publishOpportunity}
           applicableExamYear={
             draft.category === "makeup_certification"
               ? makeupCertificationV1Metadata.applicableExamYear

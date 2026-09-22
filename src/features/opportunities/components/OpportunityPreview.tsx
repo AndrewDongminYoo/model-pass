@@ -1,10 +1,15 @@
 import { useState } from "react";
 import { makeupCertificationV1Metadata } from "../../eligibility/templates/makeup-certification-v1";
+import type { OpportunityPublicationResult } from "../api/publish-opportunity";
 import type { OpportunityDraft } from "../domain/opportunity";
 
 interface OpportunityPreviewProps {
   draft: OpportunityDraft;
   applicableExamYear?: number;
+  onPublish?: (
+    draft: OpportunityDraft,
+    confirmedHardRuleIds: string[],
+  ) => Promise<OpportunityPublicationResult>;
 }
 
 function ruleReasons(
@@ -44,13 +49,31 @@ function previewText(draft: OpportunityDraft, applicableExamYear?: number) {
 export function OpportunityPreview({
   draft,
   applicableExamYear,
+  onPublish,
 }: OpportunityPreviewProps) {
   const [confirmedDraft, setConfirmedDraft] = useState<OpportunityDraft>();
   const [copiedDraft, setCopiedDraft] = useState<OpportunityDraft>();
   const [copyErrorDraft, setCopyErrorDraft] = useState<OpportunityDraft>();
+  const [hardRuleConfirmation, setHardRuleConfirmation] = useState<{
+    draft: OpportunityDraft;
+    ruleIds: string[];
+  }>();
+  const [publication, setPublication] = useState<{
+    draft: OpportunityDraft;
+    result: OpportunityPublicationResult;
+  }>();
+  const [publishErrorDraft, setPublishErrorDraft] =
+    useState<OpportunityDraft>();
+  const [publishingDraft, setPublishingDraft] = useState<OpportunityDraft>();
   const examYear =
     applicableExamYear ?? makeupCertificationV1Metadata.applicableExamYear;
   const confirmed = confirmedDraft === draft;
+  const hardRules = draft.rules.filter((rule) => rule.effect === "hard_fail");
+  const confirmedHardRuleIds =
+    hardRuleConfirmation?.draft === draft ? hardRuleConfirmation.ruleIds : [];
+  const allHardRulesConfirmed = hardRules.every((rule) =>
+    confirmedHardRuleIds.includes(rule.id),
+  );
 
   async function copyOpportunity() {
     try {
@@ -62,6 +85,31 @@ export function OpportunityPreview({
       setCopyErrorDraft(undefined);
     } catch {
       setCopyErrorDraft(draft);
+    }
+  }
+
+  function setHardRuleConfirmed(ruleId: string, checked: boolean) {
+    const currentIds =
+      hardRuleConfirmation?.draft === draft ? hardRuleConfirmation.ruleIds : [];
+    setHardRuleConfirmation({
+      draft,
+      ruleIds: checked
+        ? [...currentIds, ruleId]
+        : currentIds.filter((id) => id !== ruleId),
+    });
+  }
+
+  async function publish() {
+    if (onPublish === undefined || !allHardRulesConfirmed) return;
+    setPublishingDraft(draft);
+    setPublishErrorDraft(undefined);
+    try {
+      const result = await onPublish(draft, confirmedHardRuleIds);
+      setPublication({ draft, result });
+    } catch {
+      setPublishErrorDraft(draft);
+    } finally {
+      setPublishingDraft(undefined);
     }
   }
 
@@ -110,6 +158,42 @@ export function OpportunityPreview({
       {copiedDraft === draft && <p role="status">Copied.</p>}
       {copyErrorDraft === draft && (
         <p role="alert">Could not copy the opportunity. Try again.</p>
+      )}
+      {onPublish && (
+        <section aria-labelledby="hard-rule-confirmation-heading">
+          <h3 id="hard-rule-confirmation-heading">Confirm every hard rule</h3>
+          {hardRules.map((rule) => (
+            <label key={rule.id}>
+              <input
+                type="checkbox"
+                checked={confirmedHardRuleIds.includes(rule.id)}
+                onChange={(event) =>
+                  setHardRuleConfirmed(rule.id, event.target.checked)
+                }
+              />
+              Confirm hard rule: {rule.reason}
+            </label>
+          ))}
+          <button
+            type="button"
+            disabled={!allHardRulesConfirmed || publishingDraft === draft}
+            onClick={() => void publish()}
+          >
+            {publishingDraft === draft ? "Publishing…" : "Publish opportunity"}
+          </button>
+          {publishErrorDraft === draft && (
+            <p role="alert">Could not publish the opportunity. Try again.</p>
+          )}
+          {publication?.draft === draft && (
+            <div>
+              <p role="status">Opportunity published.</p>
+              <a href={publication.result.applicantPath}>Applicant link</a>
+              <a href={publication.result.recruiterReviewPath}>
+                Recruiter review link
+              </a>
+            </div>
+          )}
+        </section>
       )}
     </section>
   );

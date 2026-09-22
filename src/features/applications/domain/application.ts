@@ -2,7 +2,7 @@ import { z } from "zod";
 import type {
   AnswerValue,
   EvaluationResult,
-} from "../../eligibility/domain/types";
+} from "../../eligibility/domain/types.ts";
 
 export interface SubmitApplicationInput {
   opportunityId: string;

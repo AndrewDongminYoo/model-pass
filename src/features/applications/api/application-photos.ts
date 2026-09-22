@@ -39,8 +39,8 @@ export interface RecruiterApplication {
 interface RecruiterApplicationRow {
   id: string;
   created_at: string;
-  applicant_display_name: string;
-  applicant_phone: string;
+  applicant_display_name: string | null;
+  applicant_phone: string | null;
   evaluation_snapshot: unknown;
   application_answers: Array<{ field: string; value: unknown }>;
   application_photos: Array<{
@@ -257,8 +257,8 @@ function parseRecruiterApplication(
   return {
     id: row.id,
     createdAt: row.created_at,
-    applicantDisplayName: row.applicant_display_name,
-    applicantPhone: row.applicant_phone,
+    applicantDisplayName: row.applicant_display_name ?? "Deleted applicant",
+    applicantPhone: row.applicant_phone ?? "Contact removed",
     evaluation: row.evaluation_snapshot,
     answers: row.application_answers.map((answer) => ({
       field: answer.field,

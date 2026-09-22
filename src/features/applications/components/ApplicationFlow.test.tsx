@@ -2,7 +2,7 @@ import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "../../../app/App";
 import type { PublicOpportunity } from "../api/get-public-opportunity";
 import {
@@ -14,15 +14,22 @@ import { ApplicationForm } from "./ApplicationForm";
 
 const {
   getApplicationPhotoStatusMock,
+  getAttendanceMock,
   getPublicOpportunityMock,
   submitApplicationMock,
   uploadApplicationPhotoMock,
 } = vi.hoisted(() => ({
   getApplicationPhotoStatusMock: vi.fn(),
+  getAttendanceMock: vi.fn(),
   getPublicOpportunityMock: vi.fn(),
   submitApplicationMock: vi.fn(),
   uploadApplicationPhotoMock: vi.fn(),
 }));
+
+vi.mock("../api/attendance", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../api/attendance")>();
+  return { ...original, getAttendance: getAttendanceMock };
+});
 
 vi.mock("../api/get-public-opportunity", async (importOriginal) => {
   const original =
@@ -50,6 +57,7 @@ const opportunityId = "00000000-0000-4000-8000-000000000001";
 const applicationId = "00000000-0000-4000-8000-000000000101";
 const pendingAttemptId = "00000000-0000-4000-8000-000000000201";
 const pendingStorageKey = `model-pass:pending-photo:${opportunityId}`;
+const attendanceStorageKey = `model-pass:attendance:${opportunityId}`;
 const makeupOpportunity: PublicOpportunity = {
   id: opportunityId,
   category: "makeup_certification",
@@ -111,6 +119,41 @@ const photoOpportunity: PublicOpportunity = {
   ],
 };
 
+beforeEach(() => {
+  getAttendanceMock.mockResolvedValue({
+    applicationId,
+    viewerParty: "applicant",
+    selected: true,
+    allowedActions: ["applicant_confirmed"],
+    events: [],
+  });
+});
+
+it("keeps a submitted applicant in the waiting state until recruiter selection", async () => {
+  // Production break: showing attendance controls immediately after submission bypasses the recruiter decision.
+  getAttendanceMock.mockResolvedValue({
+    applicationId,
+    viewerParty: "applicant",
+    selected: false,
+    allowedActions: [],
+    events: [],
+  });
+  submitApplicationMock.mockResolvedValue(successfulSubmission());
+  const user = userEvent.setup();
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+  await reachApplicationForm(user);
+  await completeContactFields(user);
+  await user.click(screen.getByLabelText("Consent to this application"));
+  await user.click(screen.getByRole("button", { name: "Submit application" }));
+
+  expect(
+    await screen.findByText("Waiting for recruiter selection."),
+  ).toHaveAttribute("role", "status");
+  expect(
+    screen.queryByRole("button", { name: "Confirm attendance" }),
+  ).not.toBeInTheDocument();
+});
+
 afterEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -132,9 +175,9 @@ it("restores a valid opportunity-scoped pending photo capability", async () => {
   );
   render(<ApplicationForm opportunity={photoOpportunity} />);
 
-  expect(
-    screen.getByRole("status"),
-  ).toHaveTextContent("Checking photo application status");
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Checking photo application status",
+  );
   expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
   await act(async () => {
     resolveStatus?.({ status: "pending" });
@@ -186,6 +229,9 @@ it("restores a receipt when another tab already completed the photo", async () =
     await screen.findByRole("heading", { name: "Application received" }),
   ).toBeVisible();
   expect(screen.getByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(
+    screen.getByRole("region", { name: "Privacy controls" }),
+  ).toBeVisible();
   expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
   expect(uploadApplicationPhotoMock).not.toHaveBeenCalled();
   expect(localStorage.getItem(pendingStorageKey)).toBeNull();
@@ -325,7 +371,10 @@ it("clears capability data after a non-photo submission", async () => {
   // Production break: unrelated successful applications must not leave stale photo authority in browser storage.
   const user = userEvent.setup();
   render(<ApplicationForm opportunity={makeupOpportunity} />);
-  localStorage.setItem(pendingStorageKey, JSON.stringify(pendingPhotoCapability()));
+  localStorage.setItem(
+    pendingStorageKey,
+    JSON.stringify(pendingPhotoCapability()),
+  );
   submitApplicationMock.mockResolvedValue(successfulSubmission());
   await reachApplicationForm(user);
   await completeContactFields(user);
@@ -619,6 +668,151 @@ it("shows a private receipt without creating public profile UI", async () => {
   expect(
     screen.queryByRole("heading", { name: /profile/i }),
   ).not.toBeInTheDocument();
+});
+
+it("persists only the applicant attendance capability and restores operable attendance", async () => {
+  // Production break: clearing the submission attempt on receipt makes post-close attendance impossible, while persisting the form would retain PII.
+  const user = userEvent.setup();
+  submitApplicationMock.mockResolvedValue(successfulSubmission());
+  const view = render(<ApplicationForm opportunity={makeupOpportunity} />);
+  await reachApplicationForm(user);
+  await completeContactFields(user);
+  await user.click(screen.getByLabelText("Consent to this application"));
+  await user.click(screen.getByRole("button", { name: "Submit application" }));
+
+  expect(
+    await screen.findByRole("button", { name: "Confirm attendance" }),
+  ).toBeEnabled();
+  const stored = localStorage.getItem(attendanceStorageKey);
+  expect(stored).not.toBeNull();
+  expect(JSON.parse(stored ?? "{}")).toEqual({
+    applicationId,
+    submissionAttemptId:
+      submitApplicationMock.mock.calls[0]?.[0].submissionAttemptId,
+    expiresAt: "2099-07-01T10:00:00.000Z",
+  });
+  expect(stored).not.toContain("Applicant");
+  expect(stored).not.toContain("010-1234-5678");
+  expect(stored).not.toContain("2000-09-22");
+  expect(stored).not.toContain("isAvailable");
+  expect(stored).not.toContain("Consent");
+  expect(getAttendanceMock).toHaveBeenCalledWith({
+    applicationId,
+    opportunityId,
+    submissionAttemptId:
+      submitApplicationMock.mock.calls[0]?.[0].submissionAttemptId,
+  });
+
+  view.unmount();
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+  expect(
+    await screen.findByRole("heading", { name: "Application received" }),
+  ).toBeVisible();
+  expect(screen.getByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Confirm attendance" }),
+  ).toBeEnabled();
+});
+
+it("shows the submission attempt as a private management code on a successful receipt", async () => {
+  // Production break: a receipt without the submission attempt strands the applicant when browser storage later expires.
+  const user = userEvent.setup();
+  submitApplicationMock.mockResolvedValue(successfulSubmission());
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+  await reachApplicationForm(user);
+  await completeContactFields(user);
+  await user.click(screen.getByLabelText("Consent to this application"));
+  await user.click(screen.getByRole("button", { name: "Submit application" }));
+
+  expect(
+    await screen.findByRole("heading", { name: "Application received" }),
+  ).toBeVisible();
+  const submissionAttemptId =
+    submitApplicationMock.mock.calls[0]?.[0].submissionAttemptId;
+  expect(screen.getByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(
+    screen.getByText(`Private management code: ${submissionAttemptId}`),
+  ).toBeVisible();
+  expect(screen.getByText(/do not share/i)).toBeVisible();
+});
+
+it("recovers attendance and privacy controls from manually entered UUIDs after attendance storage expires", async () => {
+  // Production break: an expired local capability must not permanently remove an applicant's management controls.
+  localStorage.setItem(
+    attendanceStorageKey,
+    JSON.stringify({
+      applicationId,
+      submissionAttemptId: pendingAttemptId,
+      expiresAt: "2020-01-01T00:00:00.000Z",
+    }),
+  );
+  const user = userEvent.setup();
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+
+  expect(
+    screen.getByRole("heading", { name: "Recover application management" }),
+  ).toBeVisible();
+  await user.type(screen.getByLabelText("Application ID"), applicationId);
+  await user.type(
+    screen.getByLabelText("Private management code"),
+    pendingAttemptId,
+  );
+  await user.click(screen.getByRole("button", { name: "Recover management" }));
+
+  expect(
+    await screen.findByRole("button", { name: "Confirm attendance" }),
+  ).toBeEnabled();
+  expect(
+    screen.getByRole("region", { name: "Privacy controls" }),
+  ).toBeVisible();
+  expect(getAttendanceMock).toHaveBeenCalledWith({
+    applicationId,
+    opportunityId,
+    submissionAttemptId: pendingAttemptId,
+  });
+});
+
+it("rejects invalid application recovery identifiers before rendering management controls", async () => {
+  // Production break: accepting malformed recovery identifiers can invoke applicant management with an invalid capability.
+  const user = userEvent.setup();
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+
+  await user.type(screen.getByLabelText("Application ID"), "not-a-uuid");
+  await user.type(
+    screen.getByLabelText("Private management code"),
+    "also-not-a-uuid",
+  );
+  await user.click(screen.getByRole("button", { name: "Recover management" }));
+
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "Enter valid application ID and private management code.",
+  );
+  expect(
+    screen.queryByRole("button", { name: "Confirm attendance" }),
+  ).not.toBeInTheDocument();
+  expect(getAttendanceMock).not.toHaveBeenCalled();
+});
+
+it("keeps manually entered management codes out of the URL and logs", async () => {
+  // Production break: serializing a recovery capability into navigation or diagnostics leaks a private management code.
+  const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+  const user = userEvent.setup();
+  window.history.replaceState({}, "", `/opportunities/${opportunityId}/apply`);
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+
+  await user.type(screen.getByLabelText("Application ID"), applicationId);
+  await user.type(
+    screen.getByLabelText("Private management code"),
+    pendingAttemptId,
+  );
+  await user.click(screen.getByRole("button", { name: "Recover management" }));
+
+  expect(
+    await screen.findByRole("region", { name: "Privacy controls" }),
+  ).toBeVisible();
+  expect(window.location.href).not.toContain(applicationId);
+  expect(window.location.href).not.toContain(pendingAttemptId);
+  expect(consoleLog).not.toHaveBeenCalled();
 });
 
 it("exposes the direct applicant route and keeps the recruiter drafting route usable", async () => {

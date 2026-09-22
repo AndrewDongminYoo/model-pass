@@ -1,7 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "../../../app/App";
 import type { PublicOpportunity } from "../../applications/api/get-public-opportunity";
 import {
@@ -14,19 +14,31 @@ import { ApplicationsPage } from "../routes/ApplicationsPage";
 
 const {
   createPhotoViewUrlMock,
+  getAttendanceMock,
   getRecruiterApplicationsMock,
   submitApplicationMock,
   supabaseClientMock,
   uploadApplicationPhotoMock,
 } = vi.hoisted(() => ({
   createPhotoViewUrlMock: vi.fn(),
+  getAttendanceMock: vi.fn(),
   getRecruiterApplicationsMock: vi.fn(),
   submitApplicationMock: vi.fn(),
   supabaseClientMock: {
+    auth: {
+      getSession: vi.fn(),
+      onAuthStateChange: vi.fn(),
+    },
     functions: { invoke: vi.fn() },
   },
   uploadApplicationPhotoMock: vi.fn(),
 }));
+
+vi.mock("../../applications/api/attendance", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("../../applications/api/attendance")>();
+  return { ...original, getAttendance: getAttendanceMock };
+});
 
 vi.mock("../../../lib/supabase/client", () => ({
   getSupabaseClient: () => supabaseClientMock,
@@ -57,9 +69,25 @@ const opportunityId = "00000000-0000-4000-8000-000000000001";
 const applicationId = "00000000-0000-4000-8000-000000000101";
 const photoId = "00000000-0000-4000-8000-000000000301";
 
+beforeEach(() => {
+  getAttendanceMock.mockImplementation(() => new Promise(() => undefined));
+  supabaseClientMock.auth.getSession.mockResolvedValue({
+    data: {
+      session: {
+        user: { id: "00000000-0000-4000-8000-000000000111" },
+      },
+    },
+    error: null,
+  });
+  supabaseClientMock.auth.onAuthStateChange.mockReturnValue({
+    data: { subscription: { unsubscribe: vi.fn() } },
+  });
+});
+
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  localStorage.clear();
   window.history.replaceState({}, "", "/");
 });
 
@@ -118,8 +146,8 @@ it("the applicant upload wrapper resolves only after the signed storage request 
     new Response(
       JSON.stringify({ applicationId, photoId, submissionState: "submitted" }),
       {
-      status: 201,
-      headers: { "Content-Type": "application/json" },
+        status: 201,
+        headers: { "Content-Type": "application/json" },
       },
     ),
   );
@@ -161,11 +189,17 @@ it("withholds the receipt when photo upload fails and supports retry", async () 
   submitApplicationMock.mockResolvedValue(successfulSubmission());
   uploadApplicationPhotoMock
     .mockRejectedValueOnce(new Error("upload failed"))
-    .mockResolvedValueOnce({ applicationId, photoId, submissionState: "submitted" });
+    .mockResolvedValueOnce({
+      applicationId,
+      photoId,
+      submissionState: "submitted",
+    });
   render(<ApplicationForm opportunity={opportunity} />);
   await submitEligibleApplication(user);
 
-  expect(screen.queryByText(`Receipt: ${applicationId}`)).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(`Receipt: ${applicationId}`),
+  ).not.toBeInTheDocument();
   const file = new File([new Uint8Array([1, 2, 3])], "requested.jpg", {
     type: "image/jpeg",
   });
@@ -175,7 +209,9 @@ it("withholds the receipt when photo upload fails and supports retry", async () 
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "Could not upload the photo. Try again.",
   );
-  expect(screen.queryByText(`Receipt: ${applicationId}`)).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(`Receipt: ${applicationId}`),
+  ).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Upload photo" }));
   expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
   expect(uploadApplicationPhotoMock).toHaveBeenCalledTimes(2);

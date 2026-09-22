@@ -63,9 +63,7 @@ it("validates the exact restored photo status contract", async () => {
     },
     error: null,
   });
-  await expect(getApplicationPhotoStatus(input)).rejects.toThrow(
-    "invalid",
-  );
+  await expect(getApplicationPhotoStatus(input)).rejects.toThrow("invalid");
 });
 
 it("rejects an unauthenticated recruiter before starting an RLS read", async () => {
@@ -110,6 +108,48 @@ it("orders authenticated applications by created_at and application ID", async (
   expect(applications.map(({ id }) => id)).toEqual([
     "00000000-0000-4000-8000-000000000101",
     "00000000-0000-4000-8000-000000000102",
+  ]);
+});
+
+it("renders minimized applicant records without restoring deleted identifiers", async () => {
+  getUserMock.mockResolvedValue({
+    data: { user: { id: "00000000-0000-4000-8000-000000000401" } },
+    error: null,
+  });
+  const query = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    order: vi.fn(),
+  };
+  query.select.mockReturnValue(query);
+  query.eq.mockReturnValue(query);
+  query.order.mockReturnValueOnce(query).mockResolvedValueOnce({
+    data: [
+      {
+        ...applicationRow("101"),
+        applicant_display_name: null,
+        applicant_phone: null,
+        evaluation_snapshot: {
+          rulesetId: "hair-promotion",
+          rulesetVersion: 1,
+          eligible: true,
+          failures: [],
+          reviews: [],
+          reminders: [],
+        },
+      },
+    ],
+    error: null,
+  });
+  fromMock.mockReturnValue(query);
+
+  await expect(
+    getRecruiterApplications("00000000-0000-4000-8000-000000000001"),
+  ).resolves.toEqual([
+    expect.objectContaining({
+      applicantDisplayName: "Deleted applicant",
+      applicantPhone: "Contact removed",
+    }),
   ]);
 });
 

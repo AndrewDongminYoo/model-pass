@@ -1,7 +1,13 @@
+import type { ReactNode } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { ApplyPage } from "../features/applications/routes/ApplyPage";
+import { RecruiterAuthGate } from "../features/auth/components/RecruiterAuthGate";
 import { NewOpportunityPage } from "../features/opportunities/routes/NewOpportunityPage";
 import { ApplicationsPage } from "../features/recruiter/routes/ApplicationsPage";
+
+function RecruiterOnly({ children }: { children: ReactNode }) {
+  return <RecruiterAuthGate>{children}</RecruiterAuthGate>;
+}
 
 export function App() {
   return (
@@ -13,10 +19,28 @@ export function App() {
         />
         <Route
           path="/recruiter/opportunities/:opportunityId/applications"
-          element={<ApplicationsPage />}
+          element={
+            <RecruiterOnly>
+              <ApplicationsPage />
+            </RecruiterOnly>
+          }
         />
-        <Route path="/opportunities/new" element={<NewOpportunityPage />} />
-        <Route path="*" element={<NewOpportunityPage />} />
+        <Route
+          path="/opportunities/new"
+          element={
+            <RecruiterOnly>
+              <NewOpportunityPage />
+            </RecruiterOnly>
+          }
+        />
+        <Route
+          path="*"
+          element={
+            <RecruiterOnly>
+              <NewOpportunityPage />
+            </RecruiterOnly>
+          }
+        />
       </Routes>
     </BrowserRouter>
   );

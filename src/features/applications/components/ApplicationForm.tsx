@@ -13,6 +13,8 @@ import {
   getApplicationPhotoStatus,
   uploadApplicationPhoto,
 } from "../api/application-photos";
+import { AttendanceManager } from "../../attendance/components/AttendanceManager";
+import { ApplicantPrivacyControls } from "../../privacy/components/ApplicantPrivacyControls";
 import { EligibilityForm } from "./EligibilityForm";
 import { EligibilityResult } from "./EligibilityResult";
 
@@ -41,6 +43,11 @@ const initialContactValues: ContactValues = {
   futureOpportunityConsent: false,
 };
 
+const initialRecoveryValues: RecoveryValues = {
+  applicationId: "",
+  submissionAttemptId: "",
+};
+
 interface PendingPhotoCapability {
   applicationId: string;
   submissionAttemptId: string;
@@ -49,11 +56,27 @@ interface PendingPhotoCapability {
   expiresAt: string;
 }
 
+interface StoredAttendanceCapability {
+  applicationId: string;
+  submissionAttemptId: string;
+  expiresAt: string;
+}
+
+interface RecoveryValues {
+  applicationId: string;
+  submissionAttemptId: string;
+}
+
 const pendingPhotoStoragePrefix = "model-pass:pending-photo:";
+const attendanceStoragePrefix = "model-pass:attendance:";
+const attendanceRetentionMilliseconds = 30 * 24 * 60 * 60 * 1_000;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function ApplicationForm({ opportunity }: ApplicationFormProps) {
+  const [restoredAttendanceCapability] = useState(() =>
+    loadAttendanceCapability(opportunity),
+  );
   const [restoredPendingPhoto] = useState(() =>
     loadPendingPhotoCapability(opportunity),
   );
@@ -69,7 +92,11 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   );
   const [submitError, setSubmitError] = useState<string>();
   const [pending, setPending] = useState(false);
-  const [receiptId, setReceiptId] = useState<string>();
+  const [receiptCapability, setReceiptCapability] = useState<
+    StoredAttendanceCapability | undefined
+  >(restoredAttendanceCapability);
+  const [recovery, setRecovery] = useState(initialRecoveryValues);
+  const [recoveryError, setRecoveryError] = useState<string>();
   const [photo, setPhoto] = useState<File>();
   const [photoError, setPhotoError] = useState<string>();
   const [photoPending, setPhotoPending] = useState(false);
@@ -98,7 +125,13 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         }
         if (status.status === "submitted") {
           clearPendingPhotoCapability(opportunity.id);
-          setReceiptId(status.applicationId);
+          const capability = attendanceCapability(
+            opportunity,
+            status.applicationId,
+            restoredPendingPhoto.submissionAttemptId,
+          );
+          saveAttendanceCapability(opportunity.id, capability);
+          setReceiptCapability(capability);
           setRestorationStatus("idle");
           return;
         }
@@ -120,14 +153,30 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
     return () => {
       active = false;
     };
-  }, [opportunity.id, restoredPendingPhoto]);
+  }, [opportunity, restoredPendingPhoto]);
 
-  if (receiptId !== undefined) {
+  if (receiptCapability !== undefined) {
     return (
       <section aria-labelledby="application-received-heading">
         <h2 id="application-received-heading">Application received</h2>
-        <p>Receipt: {receiptId}</p>
-        <p>Keep this private receipt for your records.</p>
+        <p>Receipt: {receiptCapability.applicationId}</p>
+        <p>Private management code: {receiptCapability.submissionAttemptId}</p>
+        <p>Keep this private management code and do not share it.</p>
+        <AttendanceManager
+          capability={{
+            applicationId: receiptCapability.applicationId,
+            opportunityId: opportunity.id,
+            submissionAttemptId: receiptCapability.submissionAttemptId,
+          }}
+          viewerParty="applicant"
+        />
+        <ApplicantPrivacyControls
+          capability={{
+            applicationId: receiptCapability.applicationId,
+            opportunityId: opportunity.id,
+            submissionAttemptId: receiptCapability.submissionAttemptId,
+          }}
+        />
       </section>
     );
   }
@@ -137,9 +186,7 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   }
 
   if (restorationStatus === "unavailable") {
-    return (
-      <p role="alert">This photo application can no longer be resumed.</p>
-    );
+    return <p role="alert">This photo application can no longer be resumed.</p>;
   }
 
   if (restorationStatus === "error") {
@@ -201,7 +248,13 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         throw new Error("The photo upload completed for another application.");
       }
       clearPendingPhotoCapability(opportunity.id);
-      setReceiptId(result.applicationId);
+      const capability = attendanceCapability(
+        opportunity,
+        result.applicationId,
+        submissionAttemptId,
+      );
+      saveAttendanceCapability(opportunity.id, capability);
+      setReceiptCapability(capability);
       setPendingPhotoApplication(undefined);
     } catch {
       setPhotoError("Could not upload the photo. Try again.");
@@ -234,6 +287,27 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         return next;
       });
     }
+  }
+
+  function handleRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const applicationId = recovery.applicationId.trim();
+    const submissionAttemptId = recovery.submissionAttemptId.trim();
+    if (
+      !uuidPattern.test(applicationId) ||
+      !uuidPattern.test(submissionAttemptId)
+    ) {
+      setRecoveryError(
+        "Enter valid application ID and private management code.",
+      );
+      return;
+    }
+    setReceiptCapability({
+      applicationId,
+      submissionAttemptId,
+      expiresAt: attendanceCapabilityExpiresAt(opportunity),
+    });
+    setRecoveryError(undefined);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -282,7 +356,13 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         });
       } else {
         clearPendingPhotoCapability(opportunity.id);
-        setReceiptId(result.applicationId);
+        const capability = attendanceCapability(
+          opportunity,
+          result.applicationId,
+          submissionAttemptId,
+        );
+        saveAttendanceCapability(opportunity.id, capability);
+        setReceiptCapability(capability);
       }
     } catch (error) {
       if (error instanceof ApplicationSubmissionError) {
@@ -304,6 +384,49 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
 
   return (
     <>
+      <form noValidate onSubmit={handleRecovery}>
+        <h2>Recover application management</h2>
+        <label htmlFor="recovery-application-id">Application ID</label>
+        <input
+          id="recovery-application-id"
+          type="text"
+          value={recovery.applicationId}
+          aria-describedby={recoveryError ? "recovery-error" : undefined}
+          aria-invalid={recoveryError ? true : undefined}
+          onChange={(event) => {
+            const applicationId = event.currentTarget.value;
+            setRecovery((current) => ({
+              ...current,
+              applicationId,
+            }));
+            setRecoveryError(undefined);
+          }}
+        />
+        <label htmlFor="recovery-private-management-code">
+          Private management code
+        </label>
+        <input
+          id="recovery-private-management-code"
+          type="text"
+          value={recovery.submissionAttemptId}
+          aria-describedby={recoveryError ? "recovery-error" : undefined}
+          aria-invalid={recoveryError ? true : undefined}
+          onChange={(event) => {
+            const submissionAttemptId = event.currentTarget.value;
+            setRecovery((current) => ({
+              ...current,
+              submissionAttemptId,
+            }));
+            setRecoveryError(undefined);
+          }}
+        />
+        {recoveryError ? (
+          <p id="recovery-error" role="alert">
+            {recoveryError}
+          </p>
+        ) : null}
+        <button type="submit">Recover management</button>
+      </form>
       <EligibilityForm
         rules={opportunity.rules}
         context={{
@@ -493,6 +616,83 @@ function clearPendingPhotoCapability(opportunityId: string): void {
     localStorage.removeItem(pendingPhotoStorageKey(opportunityId));
   } catch {
     // Browser storage is best-effort; the server remains authoritative.
+  }
+}
+
+function attendanceStorageKey(opportunityId: string): string {
+  return `${attendanceStoragePrefix}${opportunityId}`;
+}
+
+function attendanceCapability(
+  opportunity: PublicOpportunity,
+  applicationId: string,
+  submissionAttemptId: string,
+): StoredAttendanceCapability {
+  return {
+    applicationId,
+    submissionAttemptId,
+    expiresAt: attendanceCapabilityExpiresAt(opportunity),
+  };
+}
+
+function attendanceCapabilityExpiresAt(opportunity: PublicOpportunity): string {
+  return new Date(
+    Date.parse(opportunity.startsAt) + attendanceRetentionMilliseconds,
+  ).toISOString();
+}
+
+function loadAttendanceCapability(
+  opportunity: PublicOpportunity,
+): StoredAttendanceCapability | undefined {
+  const key = attendanceStorageKey(opportunity.id);
+  try {
+    const stored = localStorage.getItem(key);
+    if (stored === null) return undefined;
+    const parsed: unknown = JSON.parse(stored);
+    if (!isValidAttendanceCapability(parsed, opportunity)) {
+      localStorage.removeItem(key);
+      return undefined;
+    }
+    return parsed;
+  } catch {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      // Browser storage is best-effort; the server remains authoritative.
+    }
+    return undefined;
+  }
+}
+
+function isValidAttendanceCapability(
+  value: unknown,
+  opportunity: PublicOpportunity,
+): value is StoredAttendanceCapability {
+  if (typeof value !== "object" || value === null) return false;
+  const capability = value as Partial<StoredAttendanceCapability>;
+  return (
+    JSON.stringify(Object.keys(value).sort()) ===
+      JSON.stringify(["applicationId", "expiresAt", "submissionAttemptId"]) &&
+    typeof capability.applicationId === "string" &&
+    uuidPattern.test(capability.applicationId) &&
+    typeof capability.submissionAttemptId === "string" &&
+    uuidPattern.test(capability.submissionAttemptId) &&
+    capability.expiresAt === attendanceCapabilityExpiresAt(opportunity) &&
+    Date.parse(capability.expiresAt) > Date.now()
+  );
+}
+
+function saveAttendanceCapability(
+  opportunityId: string,
+  capability: StoredAttendanceCapability,
+): void {
+  try {
+    localStorage.setItem(
+      attendanceStorageKey(opportunityId),
+      JSON.stringify(capability),
+    );
+  } catch {
+    // Browser storage is best-effort; the in-memory receipt remains usable.
   }
 }
 

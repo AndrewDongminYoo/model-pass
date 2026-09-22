@@ -5,7 +5,7 @@ import type {
   EvaluationResult,
   RuleDefinition,
   RuleOutcome,
-} from "./types";
+} from "./types.ts";
 
 export function evaluateRules(
   answers: Answers,

@@ -1,11 +1,11 @@
 import { FunctionsHttpError } from "@supabase/supabase-js";
-import { getSupabaseClient } from "../../../lib/supabase/client";
-import type { EvaluationResult } from "../../eligibility/domain/types";
+import { getSupabaseClient } from "../../../lib/supabase/client.ts";
+import type { EvaluationResult } from "../../eligibility/domain/types.ts";
 import type {
   SubmitApplicationInput,
   SubmitApplicationResult,
-} from "../domain/application";
-import { isEvaluationResult } from "../domain/application";
+} from "../domain/application.ts";
+import { isEvaluationResult } from "../domain/application.ts";
 
 export type ApplicationSubmissionState = "pending_photo" | "submitted";
 

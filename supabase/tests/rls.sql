@@ -297,7 +297,8 @@ insert into public.opportunities (
   status,
   ruleset_id,
   ruleset_version,
-  rules_snapshot
+  rules_snapshot,
+  confirmed_hard_rule_ids
 )
 values (
   '00000000-0000-0000-0000-000000000003',
@@ -312,7 +313,8 @@ values (
   'published',
   'hair-promotion',
   1,
-  '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]'
+  '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]',
+  '["schedule-available"]'
 );
 
 create temporary table submitted_application_results (result jsonb not null);
@@ -343,6 +345,7 @@ set
   ruleset_id = 'hair-promotion-updated',
   ruleset_version = 2,
   rules_snapshot = '[{"id":"replacement","field":"isAvailable","operator":"equals","expected":false,"effect":"hard_fail","reason":"Changed after submission."}]',
+  confirmed_hard_rule_ids = '["replacement"]',
   updated_at = now()
 where id = '00000000-0000-0000-0000-000000000003';
 

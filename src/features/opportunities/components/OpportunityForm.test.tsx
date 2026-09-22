@@ -226,3 +226,109 @@ it("shows an accessible error when clipboard access is unavailable", async () =>
     }
   }
 });
+
+it("keeps publication disabled until every hard rule is confirmed", async () => {
+  const user = userEvent.setup();
+  const onPublish = vi.fn();
+  const draft: OpportunityDraft = {
+    category: "hair_promotion",
+    title: "Layered cut promotion exam",
+    startsAt: "2099-06-01T10:00",
+    closesAt: "2099-05-31T18:00",
+    venueDistrict: "서울 강남구",
+    expectedMinutes: 90,
+    benefit: { type: "procedure", description: "Free layered cut" },
+    rulesetId: "hair-promotion",
+    rulesetVersion: 1,
+    rules: [
+      {
+        id: "adult-only",
+        field: "isAdult",
+        operator: "equals",
+        expected: true,
+        effect: "hard_fail",
+        reason: "This pilot is available to adults only.",
+      },
+      {
+        id: "schedule-available",
+        field: "isAvailable",
+        operator: "equals",
+        expected: true,
+        effect: "hard_fail",
+        reason: "This schedule is unavailable.",
+      },
+    ],
+  };
+
+  render(<OpportunityPreview draft={draft} onPublish={onPublish} />);
+
+  const publishButton = screen.getByRole("button", {
+    name: "Publish opportunity",
+  });
+  expect(publishButton).toBeDisabled();
+
+  await user.click(
+    screen.getByLabelText(
+      "Confirm hard rule: This pilot is available to adults only.",
+    ),
+  );
+  expect(publishButton).toBeDisabled();
+
+  await user.click(
+    screen.getByLabelText("Confirm hard rule: This schedule is unavailable."),
+  );
+  expect(publishButton).toBeEnabled();
+});
+
+it("renders applicant and recruiter-review links after publication", async () => {
+  const user = userEvent.setup();
+  const onPublish = vi.fn().mockResolvedValue({
+    opportunityId: "00000000-0000-0000-0000-000000000001",
+    applicantPath: "/opportunities/00000000-0000-0000-0000-000000000001/apply",
+    recruiterReviewPath:
+      "/recruiter/opportunities/00000000-0000-0000-0000-000000000001/applications",
+  });
+  const draft: OpportunityDraft = {
+    category: "hair_promotion",
+    title: "Layered cut promotion exam",
+    startsAt: "2099-06-01T10:00",
+    closesAt: "2099-05-31T18:00",
+    venueDistrict: "서울 강남구",
+    expectedMinutes: 90,
+    benefit: { type: "procedure", description: "Free layered cut" },
+    rulesetId: "hair-promotion",
+    rulesetVersion: 1,
+    rules: [
+      {
+        id: "adult-only",
+        field: "isAdult",
+        operator: "equals",
+        expected: true,
+        effect: "hard_fail",
+        reason: "This pilot is available to adults only.",
+      },
+    ],
+  };
+
+  render(<OpportunityPreview draft={draft} onPublish={onPublish} />);
+  await user.click(
+    screen.getByLabelText(
+      "Confirm hard rule: This pilot is available to adults only.",
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Publish opportunity" }));
+
+  expect(
+    await screen.findByRole("link", { name: "Applicant link" }),
+  ).toHaveAttribute(
+    "href",
+    "/opportunities/00000000-0000-0000-0000-000000000001/apply",
+  );
+  expect(
+    screen.getByRole("link", { name: "Recruiter review link" }),
+  ).toHaveAttribute(
+    "href",
+    "/recruiter/opportunities/00000000-0000-0000-0000-000000000001/applications",
+  );
+  expect(onPublish).toHaveBeenCalledWith(draft, ["adult-only"]);
+});

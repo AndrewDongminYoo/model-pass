@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
+  AttendanceEvent,
   AttendanceEventType,
   AttendanceParty,
   AttendanceResolution,
@@ -9,7 +10,7 @@ const MAX_BODY_BYTES = 4 * 1024;
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type AttendanceActor =
+type AttendanceActor =
   | { party: "applicant" }
   | { party: "recruiter" | "operator"; userId: string | null };
 
@@ -19,27 +20,19 @@ interface AttendanceCapability {
   submissionAttemptId?: string;
 }
 
-interface RecordAttendanceCommand extends AttendanceCapability {
-  actor: AttendanceActor;
-  eventType: AttendanceEventType;
-  party: AttendanceParty;
-  relatedEventId?: string;
-  resolution?: AttendanceResolution;
-}
-
 interface AttendanceAccess {
   actor: AttendanceActor;
   startsAt: string;
   selected: boolean;
 }
 
-export interface RecordAttendanceDependencies {
+export interface GetAttendanceDependencies {
   now: () => Date;
   resolveAccess: (
     capability: AttendanceCapability,
     accessToken: string | undefined,
   ) => Promise<AttendanceAccess | null>;
-  recordEvent: (command: RecordAttendanceCommand) => Promise<unknown>;
+  loadEvents: (applicationId: string) => Promise<AttendanceEvent[]>;
 }
 
 class AttendanceRequestError extends Error {
@@ -52,8 +45,8 @@ class AttendanceRequestError extends Error {
   }
 }
 
-export function createRecordAttendanceHandler(
-  dependencies: RecordAttendanceDependencies,
+export function createGetAttendanceHandler(
+  dependencies: GetAttendanceDependencies,
   platformAnonToken?: string,
 ) {
   return async (request: Request): Promise<Response> => {
@@ -71,28 +64,44 @@ export function createRecordAttendanceHandler(
         input,
         bearerToken === platformAnonToken ? undefined : bearerToken,
       );
-      if (access === null) {
-        throw new AttendanceRequestError("Attendance access denied.", 403);
-      }
-      if (!access.selected) {
-        throw new AttendanceRequestError(
-          "Attendance is unavailable until recruiter selection.",
-          409,
-        );
-      }
       if (
-        access.actor.party === "applicant" &&
-        input.submissionAttemptId === undefined
+        access === null ||
+        access.actor.party === "operator" ||
+        (access.actor.party === "applicant" &&
+          input.submissionAttemptId === undefined)
       ) {
         throw new AttendanceRequestError("Attendance access denied.", 403);
       }
-      assertActorPermission(access.actor, input);
-      assertEventTime(input.eventType, access.startsAt, dependencies.now());
-      const result = await dependencies.recordEvent({
-        ...input,
-        actor: access.actor,
-      });
-      return jsonResponse(result, 201);
+      if (!access.selected) {
+        return jsonResponse(
+          {
+            applicationId: input.applicationId,
+            viewerParty: access.actor.party,
+            selected: false,
+            allowedActions: [],
+            events: [],
+          },
+          200,
+        );
+      }
+      const events = filterEvents(
+        await dependencies.loadEvents(input.applicationId),
+        access.actor.party,
+      );
+      return jsonResponse(
+        {
+          applicationId: input.applicationId,
+          viewerParty: access.actor.party,
+          selected: true,
+          allowedActions: allowedActions(
+            access.actor.party,
+            access.startsAt,
+            dependencies.now(),
+          ),
+          events,
+        },
+        200,
+      );
     } catch (error) {
       if (error instanceof AttendanceRequestError) {
         return jsonResponse({ error: error.message }, error.status);
@@ -101,108 +110,85 @@ export function createRecordAttendanceHandler(
         return jsonResponse({ error: "Invalid attendance request." }, 400);
       }
       console.error(error);
-      return jsonResponse({ error: "Unable to record attendance." }, 500);
+      return jsonResponse({ error: "Unable to load attendance." }, 500);
     }
   };
 }
 
-function assertEventTime(
-  eventType: AttendanceEventType,
+function allowedActions(
+  party: AttendanceParty,
   startsAtValue: string,
   now: Date,
-): void {
+): AttendanceEventType[] {
   const startsAt = new Date(startsAtValue);
   if (Number.isNaN(startsAt.getTime())) {
     throw new Error("Attendance appointment time is invalid.");
   }
-  const isConfirmation =
-    eventType === "recruiter_confirmed" || eventType === "applicant_confirmed";
-  const isPostAppointmentOutcome = new Set<AttendanceEventType>([
-    "completed",
-    "recruiter_no_show",
-    "applicant_no_show",
-  ]).has(eventType);
-  if (isConfirmation && now >= startsAt) {
-    throw new AttendanceRequestError(
-      "Attendance confirmation is only available before the appointment.",
-      409,
-    );
+  if (now < startsAt) {
+    return [
+      party === "recruiter" ? "recruiter_confirmed" : "applicant_confirmed",
+      party === "recruiter" ? "recruiter_cancelled" : "applicant_cancelled",
+    ];
   }
-  if (isPostAppointmentOutcome && now < startsAt) {
-    throw new AttendanceRequestError(
-      "Attendance outcomes are only available after the appointment starts.",
-      409,
-    );
-  }
+  return party === "recruiter"
+    ? ["completed", "recruiter_cancelled", "applicant_no_show"]
+    : ["completed", "applicant_cancelled", "recruiter_no_show"];
 }
 
-function assertActorPermission(
-  actor: AttendanceActor,
-  input: ReturnType<typeof parseInput>,
-): void {
-  if (input.eventType === "dispute_resolved") {
-    if (actor.party !== "operator") {
-      throw new AttendanceRequestError(
-        "Operator authorization is required.",
-        403,
-      );
+function filterEvents(
+  events: AttendanceEvent[],
+  viewerParty: AttendanceParty,
+): AttendanceEvent[] {
+  const eventsById = new Map(events.map((event) => [event.id, event]));
+  const disputesByNoShow = new Map<string, AttendanceEvent>();
+  const resolutionsByDispute = new Map<string, AttendanceEvent>();
+  for (const event of events) {
+    if (event.eventType === "dispute_opened" && event.relatedEventId) {
+      disputesByNoShow.set(event.relatedEventId, event);
+    } else if (event.eventType === "dispute_resolved" && event.relatedEventId) {
+      resolutionsByDispute.set(event.relatedEventId, event);
     }
-    return;
   }
-  if (actor.party === "operator") {
-    throw new AttendanceRequestError(
-      "Operators may only resolve disputes.",
-      403,
+
+  const noShowIsVisible = (noShow: AttendanceEvent): boolean => {
+    if (noShow.party === viewerParty) return true;
+    const dispute = disputesByNoShow.get(noShow.id);
+    return (
+      dispute === undefined ||
+      resolutionsByDispute.get(dispute.id)?.resolution === "confirmed"
     );
-  }
-  if (input.eventType === "dispute_opened") {
-    if (actor.party !== input.party) {
-      throw new AttendanceRequestError(
-        "A participant may only dispute an event for its own party.",
-        403,
-      );
+  };
+
+  return events.filter((event) => {
+    if (
+      event.eventType === "recruiter_no_show" ||
+      event.eventType === "applicant_no_show"
+    ) {
+      return noShowIsVisible(event);
     }
-    return;
-  }
-  const allowed =
-    actor.party === "recruiter"
-      ? new Set<AttendanceEventType>([
-          "recruiter_confirmed",
-          "recruiter_cancelled",
-          "completed",
-          "applicant_no_show",
-        ])
-      : new Set<AttendanceEventType>([
-          "applicant_confirmed",
-          "applicant_cancelled",
-          "completed",
-          "recruiter_no_show",
-        ]);
-  if (!allowed.has(input.eventType)) {
-    throw new AttendanceRequestError(
-      "This actor cannot record that event.",
-      403,
-    );
-  }
-  const expectedParty = partyForEvent(input.eventType, actor.party);
-  if (input.party !== expectedParty) {
-    throw new AttendanceRequestError(
-      "Attendance party does not match the event.",
-      403,
-    );
-  }
+    if (event.eventType === "dispute_opened") {
+      const noShow =
+        event.relatedEventId === undefined
+          ? undefined
+          : eventsById.get(event.relatedEventId);
+      return noShow !== undefined && noShowIsVisible(noShow);
+    }
+    if (event.eventType === "dispute_resolved") {
+      const dispute =
+        event.relatedEventId === undefined
+          ? undefined
+          : eventsById.get(event.relatedEventId);
+      const noShow =
+        dispute?.relatedEventId === undefined
+          ? undefined
+          : eventsById.get(dispute.relatedEventId);
+      return noShow !== undefined && noShowIsVisible(noShow);
+    }
+    return true;
+  });
 }
 
-function partyForEvent(
-  eventType: AttendanceEventType,
-  actorParty: AttendanceParty,
-): AttendanceParty {
-  if (eventType.startsWith("recruiter_")) return "recruiter";
-  if (eventType.startsWith("applicant_")) return "applicant";
-  return actorParty;
-}
-
-function parseInput(value: unknown) {
+function parseInput(value: unknown): AttendanceCapability {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new AttendanceRequestError("Invalid attendance request.", 400);
   }
@@ -211,10 +197,6 @@ function parseInput(value: unknown) {
     "applicationId",
     "opportunityId",
     "submissionAttemptId",
-    "eventType",
-    "party",
-    "relatedEventId",
-    "resolution",
   ]);
   if (Object.keys(input).some((key) => !allowedKeys.has(key))) {
     throw new AttendanceRequestError("Invalid attendance request.", 400);
@@ -225,53 +207,11 @@ function parseInput(value: unknown) {
     }
   }
   const submissionAttemptId = optionalUuid(input.submissionAttemptId);
-  if (!isEventType(input.eventType) || !isParty(input.party)) {
-    throw new AttendanceRequestError("Invalid attendance request.", 400);
-  }
-  const relatedEventId = optionalUuid(input.relatedEventId);
-  const resolution = input.resolution;
-  if (
-    (input.eventType === "dispute_opened" ||
-      input.eventType === "dispute_resolved") !==
-      (relatedEventId !== undefined) ||
-    (input.eventType === "dispute_resolved") !== isResolution(resolution)
-  ) {
-    throw new AttendanceRequestError("Invalid attendance request.", 400);
-  }
   return {
     applicationId: input.applicationId as string,
     opportunityId: input.opportunityId as string,
     ...(submissionAttemptId ? { submissionAttemptId } : {}),
-    eventType: input.eventType,
-    party: input.party,
-    ...(relatedEventId ? { relatedEventId } : {}),
-    ...(isResolution(resolution) ? { resolution } : {}),
   };
-}
-
-function isEventType(value: unknown): value is AttendanceEventType {
-  return (
-    typeof value === "string" &&
-    new Set<AttendanceEventType>([
-      "recruiter_confirmed",
-      "applicant_confirmed",
-      "completed",
-      "recruiter_cancelled",
-      "applicant_cancelled",
-      "recruiter_no_show",
-      "applicant_no_show",
-      "dispute_opened",
-      "dispute_resolved",
-    ]).has(value as AttendanceEventType)
-  );
-}
-
-function isParty(value: unknown): value is AttendanceParty {
-  return value === "recruiter" || value === "applicant";
-}
-
-function isResolution(value: unknown): value is AttendanceResolution {
-  return value === "confirmed" || value === "rejected";
 }
 
 function optionalUuid(value: unknown): string | undefined {
@@ -292,36 +232,18 @@ async function readBoundedJson(request: Request): Promise<unknown> {
       throw new AttendanceRequestError("Attendance request is too large.", 413);
     }
   }
-  const reader = request.body?.getReader();
-  if (reader === undefined) return JSON.parse("") as unknown;
-  const chunks: Uint8Array[] = [];
-  let byteLength = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    byteLength += value.byteLength;
-    if (byteLength > MAX_BODY_BYTES) {
-      await reader.cancel();
-      throw new AttendanceRequestError("Attendance request is too large.", 413);
-    }
-    chunks.push(value);
-  }
-  const body = new Uint8Array(byteLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    body.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  let text: string;
-  try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(body);
-  } catch {
-    throw new AttendanceRequestError("Invalid attendance request.", 400);
-  }
+  const body = new Uint8Array(await request.arrayBuffer());
   if (body.byteLength > MAX_BODY_BYTES) {
     throw new AttendanceRequestError("Attendance request is too large.", 413);
   }
-  return JSON.parse(text) as unknown;
+  try {
+    return JSON.parse(
+      new TextDecoder("utf-8", { fatal: true }).decode(body),
+    ) as unknown;
+  } catch (error) {
+    if (error instanceof AttendanceRequestError) throw error;
+    throw new AttendanceRequestError("Invalid attendance request.", 400);
+  }
 }
 
 function readBearerToken(header: string | null): string | undefined {
@@ -345,10 +267,19 @@ function jsonResponse(body: unknown, status: number) {
   return new Response(JSON.stringify(body), { status, headers: corsHeaders });
 }
 
+interface AttendanceEventRow {
+  id: string;
+  party: string;
+  event_type: string;
+  occurred_at: string;
+  related_event_id: string | null;
+  resolution: string | null;
+}
+
 export function createSupabaseDependencies(
   client: SupabaseClient,
   serviceRoleKey: string,
-): RecordAttendanceDependencies {
+): GetAttendanceDependencies {
   return {
     now: () => new Date(),
     async resolveAccess(capability, accessToken) {
@@ -411,26 +342,60 @@ export function createSupabaseDependencies(
         selected: application.selected_at !== null,
       };
     },
-    async recordEvent(command) {
-      const { data, error } = await client.rpc(
-        "record_attendance_event_authorized",
-        {
-          p_application_id: command.applicationId,
-          p_actor_party: command.actor.party,
-          p_recorded_by:
-            "userId" in command.actor ? command.actor.userId : null,
-          p_event_type: command.eventType,
-          p_party: command.party,
-          p_related_event_id: command.relatedEventId ?? null,
-          p_resolution: command.resolution ?? null,
-          p_occurred_at: null,
-          p_submission_attempt_id: command.submissionAttemptId ?? null,
-        },
-      );
+    async loadEvents(applicationId) {
+      const { data, error } = await client
+        .from("attendance_events")
+        .select(
+          "id, party, event_type, occurred_at, related_event_id, resolution",
+        )
+        .eq("application_id", applicationId)
+        .order("occurred_at", { ascending: true })
+        .order("id", { ascending: true });
       if (error !== null) throw error;
-      return data;
+      return (data as AttendanceEventRow[]).map(parseEvent);
     },
   };
+}
+
+function parseEvent(row: AttendanceEventRow): AttendanceEvent {
+  if (!isParty(row.party) || !isEventType(row.event_type)) {
+    throw new Error("Attendance history is invalid.");
+  }
+  if (row.resolution !== null && !isResolution(row.resolution)) {
+    throw new Error("Attendance history is invalid.");
+  }
+  return {
+    id: row.id,
+    party: row.party,
+    eventType: row.event_type,
+    occurredAt: row.occurred_at,
+    ...(row.related_event_id === null
+      ? {}
+      : { relatedEventId: row.related_event_id }),
+    ...(row.resolution === null ? {} : { resolution: row.resolution }),
+  };
+}
+
+function isParty(value: string): value is AttendanceParty {
+  return value === "recruiter" || value === "applicant";
+}
+
+function isEventType(value: string): value is AttendanceEventType {
+  return new Set<AttendanceEventType>([
+    "recruiter_confirmed",
+    "applicant_confirmed",
+    "completed",
+    "recruiter_cancelled",
+    "applicant_cancelled",
+    "recruiter_no_show",
+    "applicant_no_show",
+    "dispute_opened",
+    "dispute_resolved",
+  ]).has(value as AttendanceEventType);
+}
+
+function isResolution(value: string): value is AttendanceResolution {
+  return value === "confirmed" || value === "rejected";
 }
 
 async function constantTimeEqual(
@@ -462,7 +427,7 @@ if (import.meta.main) {
     auth: { persistSession: false },
   });
   Deno.serve(
-    createRecordAttendanceHandler(
+    createGetAttendanceHandler(
       createSupabaseDependencies(client, serviceRoleKey),
       anonKey,
     ),

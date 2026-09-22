@@ -2,6 +2,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ApplicantPrivacyResult } from "../api/applicant-privacy";
+import { I18nProvider } from "../../../i18n/I18nProvider";
+import { LanguageSwitch } from "../../../i18n/LanguageSwitch";
 import { ApplicantPrivacyControls } from "./ApplicantPrivacyControls";
 
 const { manageApplicantPrivacyMock } = vi.hoisted(() => ({
@@ -41,14 +43,14 @@ it("revokes future-opportunity consent and disables both actions while the reque
   render(<ApplicantPrivacyControls capability={capability} />);
 
   await user.click(
-    screen.getByRole("button", { name: "Revoke future-opportunity consent" }),
+    screen.getByRole("button", { name: "향후 모집 알림 동의 철회" }),
   );
 
   expect(
-    screen.getByRole("button", { name: "Revoke future-opportunity consent" }),
+    screen.getByRole("button", { name: "향후 모집 알림 동의 철회" }),
   ).toBeDisabled();
   expect(
-    screen.getByRole("button", { name: "Request deletion" }),
+    screen.getByRole("button", { name: "개인정보 삭제 요청" }),
   ).toBeDisabled();
   expect(manageApplicantPrivacyMock).toHaveBeenCalledWith({
     ...capability,
@@ -61,7 +63,7 @@ it("revokes future-opportunity consent and disables both actions while the reque
   });
 
   expect(
-    await screen.findByText("Future-opportunity consent has been revoked."),
+    await screen.findByText("향후 모집 알림 동의를 철회했습니다."),
   ).toHaveAttribute("role", "status");
 });
 
@@ -74,17 +76,41 @@ it("shows a pending deletion request without promising immediate erasure", async
   });
   render(<ApplicantPrivacyControls capability={capability} />);
 
-  expect(screen.getByText(/subject to retention obligations/i)).toBeVisible();
-  expect(screen.getByText(/does not immediately erase records/i)).toBeVisible();
-  await user.click(screen.getByRole("button", { name: "Request deletion" }));
+  expect(screen.getByText(/법정 보관 의무/)).toBeVisible();
+  expect(screen.getByText(/즉시 삭제되지 않을 수 있습니다/)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "개인정보 삭제 요청" }));
 
   expect(await screen.findByRole("status")).toHaveTextContent(
-    "Your deletion request is pending. Records are not immediately erased.",
+    "삭제 요청을 접수했습니다. 기록은 즉시 삭제되지 않을 수 있습니다.",
   );
   expect(manageApplicantPrivacyMock).toHaveBeenCalledWith({
     ...capability,
     action: "request_deletion",
   });
+});
+
+it("translates an existing privacy status when the language changes", async () => {
+  window.localStorage.removeItem("model-pass-locale");
+  const user = userEvent.setup();
+  manageApplicantPrivacyMock.mockResolvedValueOnce({
+    action: "request_deletion",
+    status: "pending",
+  });
+  render(
+    <I18nProvider>
+      <LanguageSwitch />
+      <ApplicantPrivacyControls capability={capability} />
+    </I18nProvider>,
+  );
+
+  await user.click(screen.getByRole("button", { name: "개인정보 삭제 요청" }));
+  expect(await screen.findByRole("status")).toHaveTextContent(
+    "삭제 요청을 접수했습니다.",
+  );
+  await user.click(screen.getByRole("button", { name: "English" }));
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "Your deletion request is pending.",
+  );
 });
 
 it("offers a retry after a privacy request fails and reuses the same action", async () => {
@@ -95,17 +121,15 @@ it("offers a retry after a privacy request fails and reuses the same action", as
     .mockResolvedValueOnce({ action: "request_deletion", status: "pending" });
   render(<ApplicantPrivacyControls capability={capability} />);
 
-  await user.click(screen.getByRole("button", { name: "Request deletion" }));
+  await user.click(screen.getByRole("button", { name: "개인정보 삭제 요청" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Could not submit your privacy request. You can retry safely.",
+    "요청을 보내지 못했습니다. 다시 시도해 주세요.",
   );
-  await user.click(
-    screen.getByRole("button", { name: "Retry privacy request" }),
-  );
+  await user.click(screen.getByRole("button", { name: "다시 시도" }));
 
   expect(await screen.findByRole("status")).toHaveTextContent(
-    "Your deletion request is pending. Records are not immediately erased.",
+    "삭제 요청을 접수했습니다. 기록은 즉시 삭제되지 않을 수 있습니다.",
   );
   expect(manageApplicantPrivacyMock).toHaveBeenNthCalledWith(2, {
     ...capability,

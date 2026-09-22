@@ -6,10 +6,13 @@ import {
 } from "react";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import { appNameFor } from "../../../i18n/brand";
+import { useI18n } from "../../../i18n/locale";
 
 type AuthState = User | null | undefined;
 
 export function RecruiterAuthGate({ children }: PropsWithChildren) {
+  const { locale, t } = useI18n();
   const [user, setUser] = useState<AuthState>();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -23,7 +26,7 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
       void auth.getSession().then(({ data, error }) => {
         if (!active) return;
         if (error !== null) {
-          setErrorMessage("Could not check the recruiter session.");
+          setErrorMessage("로그인 상태를 확인하지 못했습니다.");
           setUser(null);
           return;
         }
@@ -40,7 +43,7 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
     } catch {
       void Promise.resolve().then(() => {
         if (!active) return;
-        setErrorMessage("Recruiter authentication is not configured.");
+        setErrorMessage("모집자 로그인이 아직 설정되지 않았습니다.");
         setUser(null);
       });
       return () => {
@@ -59,7 +62,7 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
     });
     setSubmitting(false);
     if (error !== null || data.user === null) {
-      setErrorMessage("Email or password is incorrect.");
+      setErrorMessage("이메일 또는 비밀번호가 올바르지 않습니다.");
       return;
     }
     setUser(data.user);
@@ -68,8 +71,10 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
   if (user === undefined) {
     return (
       <main className="app-shell app-shell--narrow auth-shell">
-        <h1 className="brand-name">Model Pass</h1>
-        <p role="status">Checking recruiter session…</p>
+        <h1 className="brand-name">{appNameFor(locale)}</h1>
+        <p role="status">
+          {t("Checking sign-in status…", "로그인 상태를 확인하고 있습니다…")}
+        </p>
       </main>
     );
   }
@@ -78,16 +83,19 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
   return (
     <main className="app-shell app-shell--narrow auth-shell">
       <header className="page-header">
-        <p className="eyebrow">Recruiter workspace</p>
-        <h1 className="brand-name">Model Pass</h1>
+        <p className="eyebrow">{t("Recruiter workspace", "모집자 공간")}</p>
+        <h1 className="brand-name">{appNameFor(locale)}</h1>
         <p className="lede">
-          Review structured applications without sorting through chat threads.
+          {t(
+            "Review eligibility and applications without sorting through every chat.",
+            "채팅을 일일이 살펴보지 않아도 지원 조건과 내용을 확인할 수 있습니다.",
+          )}
         </p>
       </header>
       <form className="surface form-stack" onSubmit={signIn}>
-        <h2>Recruiter sign in</h2>
+        <h2>{t("Recruiter sign in", "모집자 로그인")}</h2>
         <div className="field">
-          <label htmlFor="recruiter-email">Email</label>
+          <label htmlFor="recruiter-email">{t("Email", "이메일")}</label>
           <input
             id="recruiter-email"
             type="email"
@@ -98,7 +106,9 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
           />
         </div>
         <div className="field">
-          <label htmlFor="recruiter-password">Password</label>
+          <label htmlFor="recruiter-password">
+            {t("Password", "비밀번호")}
+          </label>
           <input
             id="recruiter-password"
             type="password"
@@ -109,10 +119,28 @@ export function RecruiterAuthGate({ children }: PropsWithChildren) {
           />
         </div>
         <button type="submit" disabled={submitting}>
-          {submitting ? "Signing in…" : "Sign in"}
+          {submitting
+            ? t("Signing in…", "로그인하고 있습니다…")
+            : t("Sign in", "로그인")}
         </button>
-        {errorMessage && <p role="alert">{errorMessage}</p>}
+        {errorMessage && (
+          <p role="alert">{localizeAuthError(errorMessage, locale)}</p>
+        )}
       </form>
     </main>
   );
+}
+
+function localizeAuthError(message: string, locale: "ko" | "en"): string {
+  if (locale === "ko") return message;
+  switch (message) {
+    case "로그인 상태를 확인하지 못했습니다.":
+      return "Could not check your sign-in status.";
+    case "모집자 로그인이 아직 설정되지 않았습니다.":
+      return "Recruiter sign-in is not configured yet.";
+    case "이메일 또는 비밀번호가 올바르지 않습니다.":
+      return "Incorrect email or password.";
+    default:
+      return message;
+  }
 }

@@ -143,14 +143,16 @@ it("keeps a submitted applicant in the waiting state until recruiter selection",
   render(<ApplicationForm opportunity={makeupOpportunity} />);
   await reachApplicationForm(user);
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   expect(
-    await screen.findByText("Waiting for recruiter selection."),
+    await screen.findByText("모집자의 선택을 기다리고 있습니다."),
   ).toHaveAttribute("role", "status");
   expect(
-    screen.queryByRole("button", { name: "Confirm attendance" }),
+    screen.queryByRole("button", { name: "참여 확정" }),
   ).not.toBeInTheDocument();
 });
 
@@ -176,16 +178,20 @@ it("restores a valid opportunity-scoped pending photo capability", async () => {
   render(<ApplicationForm opportunity={photoOpportunity} />);
 
   expect(screen.getByRole("status")).toHaveTextContent(
-    "Checking photo application status",
+    "사진 제출 상태를 확인하고 있습니다…",
   );
-  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("이 공고에서 요청한 사진"),
+  ).not.toBeInTheDocument();
   await act(async () => {
     resolveStatus?.({ status: "pending" });
   });
   expect(
-    await screen.findByRole("heading", { name: "Photo required to finish" }),
+    await screen.findByRole("heading", {
+      name: "사진을 올려야 지원이 완료됩니다",
+    }),
   ).toBeVisible();
-  expect(screen.queryByLabelText("Display name")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("이름 또는 별명")).not.toBeInTheDocument();
 
   const file = new File([new Uint8Array([1])], "requested.jpg", {
     type: "image/jpeg",
@@ -196,8 +202,8 @@ it("restores a valid opportunity-scoped pending photo capability", async () => {
     submissionState: "submitted",
   });
   const user = userEvent.setup();
-  await user.upload(screen.getByLabelText("Job-specific photo"), file);
-  await user.click(screen.getByRole("button", { name: "Upload photo" }));
+  await user.upload(screen.getByLabelText("이 공고에서 요청한 사진"), file);
+  await user.click(screen.getByRole("button", { name: "사진 올리기" }));
 
   expect(uploadApplicationPhotoMock).toHaveBeenCalledWith({
     applicationId,
@@ -226,13 +232,13 @@ it("restores a receipt when another tab already completed the photo", async () =
   render(<ApplicationForm opportunity={photoOpportunity} />);
 
   expect(
-    await screen.findByRole("heading", { name: "Application received" }),
+    await screen.findByRole("heading", { name: "지원서를 받았습니다" }),
   ).toBeVisible();
-  expect(screen.getByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(screen.getByText(`접수 번호: ${applicationId}`)).toBeVisible();
+  expect(screen.getByRole("region", { name: "개인정보 관리" })).toBeVisible();
   expect(
-    screen.getByRole("region", { name: "Privacy controls" }),
-  ).toBeVisible();
-  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+    screen.queryByLabelText("이 공고에서 요청한 사진"),
+  ).not.toBeInTheDocument();
   expect(uploadApplicationPhotoMock).not.toHaveBeenCalled();
   expect(localStorage.getItem(pendingStorageKey)).toBeNull();
 });
@@ -247,9 +253,11 @@ it("clears an unavailable restored capability with an explicit message", async (
   render(<ApplicationForm opportunity={photoOpportunity} />);
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "This photo application can no longer be resumed.",
+    "이 사진 제출은 더 이상 이어서 진행할 수 없습니다.",
   );
-  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("이 공고에서 요청한 사진"),
+  ).not.toBeInTheDocument();
   expect(localStorage.getItem(pendingStorageKey)).toBeNull();
 });
 
@@ -265,9 +273,11 @@ it("keeps the capability but shows an explicit status error", async () => {
   render(<ApplicationForm opportunity={photoOpportunity} />);
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Could not check this photo application. Reload to try again.",
+    "사진 제출 상태를 확인하지 못했습니다. 새로고침 후 다시 시도해 주세요.",
   );
-  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("이 공고에서 요청한 사진"),
+  ).not.toBeInTheDocument();
   expect(localStorage.getItem(pendingStorageKey)).not.toBeNull();
 });
 
@@ -313,7 +323,9 @@ it("rejects and clears expired or ruleset-mismatched pending capabilities", () =
     localStorage.setItem(pendingStorageKey, JSON.stringify(stored));
     const view = render(<ApplicationForm opportunity={photoOpportunity} />);
     expect(
-      screen.queryByRole("heading", { name: "Photo required to finish" }),
+      screen.queryByRole("heading", {
+        name: "사진을 올려야 지원이 완료됩니다",
+      }),
     ).not.toBeInTheDocument();
     expect(localStorage.getItem(pendingStorageKey)).toBeNull();
     view.unmount();
@@ -330,15 +342,15 @@ it("persists only the minimal pending photo capability and clears it on completi
     submissionState: "submitted",
   });
   render(<ApplicationForm opportunity={photoOpportunity} />);
-  await answerBooleanQuestion(user, "Is adult", true);
-  await answerBooleanQuestion(user, "Is available", true);
-  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
-  await user.click(
-    screen.getByRole("button", { name: "Continue to application" }),
-  );
+  await answerBooleanQuestion(user, "만 19세 이상인가요?", true);
+  await answerBooleanQuestion(user, "모집 일정에 참여할 수 있나요?", true);
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
+  await user.click(screen.getByRole("button", { name: "지원서 작성하기" }));
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   const stored = localStorage.getItem(pendingStorageKey);
   expect(stored).not.toBeNull();
@@ -357,12 +369,12 @@ it("persists only the minimal pending photo capability and clears it on completi
   expect(stored).not.toContain("Consent");
 
   await user.upload(
-    screen.getByLabelText("Job-specific photo"),
+    screen.getByLabelText("이 공고에서 요청한 사진"),
     new File([new Uint8Array([1])], "requested.jpg", { type: "image/jpeg" }),
   );
-  await user.click(screen.getByRole("button", { name: "Upload photo" }));
+  await user.click(screen.getByRole("button", { name: "사진 올리기" }));
   expect(
-    await screen.findByRole("heading", { name: "Application received" }),
+    await screen.findByRole("heading", { name: "지원서를 받았습니다" }),
   ).toBeVisible();
   expect(localStorage.getItem(pendingStorageKey)).toBeNull();
 });
@@ -378,8 +390,10 @@ it("clears capability data after a non-photo submission", async () => {
   submitApplicationMock.mockResolvedValue(successfulSubmission());
   await reachApplicationForm(user);
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   expect(localStorage.getItem(pendingStorageKey)).toBeNull();
 });
@@ -389,38 +403,40 @@ it("explains the exact deterministic hard failure without requesting a photo", a
   const user = userEvent.setup();
   render(<ApplicationForm opportunity={makeupOpportunity} />);
 
-  await answerBooleanQuestion(user, "Is adult", false);
-  await answerBooleanQuestion(user, "Is available", true);
-  await answerBooleanQuestion(user, "Wears lenses", false);
-  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
+  await answerBooleanQuestion(user, "만 19세 이상인가요?", false);
+  await answerBooleanQuestion(user, "모집 일정에 참여할 수 있나요?", true);
+  await answerBooleanQuestion(
+    user,
+    "시험 당일 렌즈를 착용할 예정인가요?",
+    false,
+  );
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
 
-  expect(
-    screen.getByText("This pilot is available to adults only."),
-  ).toBeVisible();
-  expect(screen.queryByLabelText("Requested photo")).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Display name")).not.toBeInTheDocument();
+  expect(screen.getByText("만 19세 이상만 지원할 수 있습니다.")).toBeVisible();
+  expect(screen.queryByLabelText("요청된 사진")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("이름 또는 별명")).not.toBeInTheDocument();
 });
 
-it("reveals the requested-photo step before contact and current-job consent", async () => {
+it("explains photo timing without showing an unusable upload before contact consent", async () => {
   // Production break: collecting contact details before non-photo hard rules pass violates progressive disclosure.
   const user = userEvent.setup();
   render(<ApplicationForm opportunity={makeupOpportunity} />);
 
   await answerAllEligibleQuestions(user);
-  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
 
-  expect(screen.getByLabelText("Requested photo")).toBeDisabled();
+  expect(screen.queryByLabelText("요청된 사진")).not.toBeInTheDocument();
   expect(
-    screen.getByText(/photo upload is not available in this step/i),
+    screen.getByText(/이 단계에서는 사진을 올릴 수 없습니다/i),
   ).toBeVisible();
-  expect(screen.queryByLabelText("Display name")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("이름 또는 별명")).not.toBeInTheDocument();
 
-  await user.click(
-    screen.getByRole("button", { name: "Continue to application" }),
-  );
+  await user.click(screen.getByRole("button", { name: "지원서 작성하기" }));
 
-  expect(screen.getByLabelText("Display name")).toBeVisible();
-  expect(screen.getByLabelText("Consent to this application")).toBeVisible();
+  expect(screen.getByLabelText("이름 또는 별명")).toBeVisible();
+  expect(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  ).toBeVisible();
 });
 
 it("defaults future alerts to unchecked and submits false", async () => {
@@ -430,11 +446,15 @@ it("defaults future alerts to unchecked and submits false", async () => {
   render(<ApplicationForm opportunity={makeupOpportunity} />);
   await reachApplicationForm(user);
 
-  const futureConsent = screen.getByLabelText("Future opportunity alerts");
+  const futureConsent = screen.getByLabelText(
+    "향후 모집 알림을 받겠습니다(선택)",
+  );
   expect(futureConsent).not.toBeChecked();
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   expect(submitApplicationMock).toHaveBeenCalledWith({
     opportunityId,
@@ -461,22 +481,24 @@ it("preserves answers after a recoverable submit error and allows retry", async 
   render(<ApplicationForm opportunity={makeupOpportunity} />);
   await reachApplicationForm(user);
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Could not submit the application. Try again.",
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
   );
-  expect(screen.getByLabelText("Display name")).toHaveValue("Applicant");
+
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "지원서를 제출하지 못했습니다. 다시 시도해 주세요.",
+  );
+  expect(screen.getByLabelText("이름 또는 별명")).toHaveValue("Applicant");
   expect(
-    within(screen.getByRole("group", { name: "Is available" })).getByLabelText(
-      "Yes",
-    ),
+    within(
+      screen.getByRole("group", { name: "모집 일정에 참여할 수 있나요?" }),
+    ).getByLabelText("예"),
   ).toBeChecked();
 
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
   expect(
-    await screen.findByRole("heading", { name: "Application received" }),
+    await screen.findByRole("heading", { name: "지원서를 받았습니다" }),
   ).toBeVisible();
   expect(submitApplicationMock).toHaveBeenCalledTimes(2);
   const firstAttemptId =
@@ -553,23 +575,23 @@ it("renders authoritative server hard-fail reasons and hides later collection", 
   render(<ApplicationForm opportunity={makeupOpportunity} />);
   await reachApplicationForm(user);
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   expect(
-    await screen.findByText("This schedule is unavailable."),
+    await screen.findByText("모집 일정에 참여할 수 있어야 합니다."),
   ).toBeVisible();
-  expect(screen.queryByLabelText("Requested photo")).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Display name")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("요청된 사진")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("이름 또는 별명")).not.toBeInTheDocument();
   expect(
-    screen.queryByText("Could not submit the application. Try again."),
+    screen.queryByText("지원서를 제출하지 못했습니다. 다시 시도해 주세요."),
   ).not.toBeInTheDocument();
 
-  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
-  await user.click(
-    screen.getByRole("button", { name: "Continue to application" }),
-  );
-  expect(screen.getByLabelText("Display name")).toHaveValue("Applicant");
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
+  await user.click(screen.getByRole("button", { name: "지원서 작성하기" }));
+  expect(screen.getByLabelText("이름 또는 별명")).toHaveValue("Applicant");
 });
 
 it("shows a safe server validation message without an evaluation", async () => {
@@ -581,13 +603,15 @@ it("shows a safe server validation message without an evaluation", async () => {
   render(<ApplicationForm opportunity={makeupOpportunity} />);
   await reachApplicationForm(user);
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Applicants must be at least 19 years old.",
+    "지원자는 만 19세 이상이어야 합니다.",
   );
-  expect(screen.getByLabelText("Display name")).toHaveValue("Applicant");
+  expect(screen.getByLabelText("이름 또는 별명")).toHaveValue("Applicant");
 });
 
 it("disables a pending submission and prevents a double submit", async () => {
@@ -604,10 +628,12 @@ it("disables a pending submission and prevents a double submit", async () => {
   render(<ApplicationForm opportunity={makeupOpportunity} />);
   await reachApplicationForm(user);
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
 
   const submitButton = screen.getByRole("button", {
-    name: "Submit application",
+    name: "지원서 제출",
   });
   await user.click(submitButton);
   expect(submitButton).toBeDisabled();
@@ -616,7 +642,7 @@ it("disables a pending submission and prevents a double submit", async () => {
 
   resolveSubmission?.(successfulSubmission());
   expect(
-    await screen.findByRole("heading", { name: "Application received" }),
+    await screen.findByRole("heading", { name: "지원서를 받았습니다" }),
   ).toBeVisible();
 });
 
@@ -625,24 +651,26 @@ it("associates every eligibility and application validation error with its field
   const user = userEvent.setup();
   render(<ApplicationForm opportunity={makeupOpportunity} />);
 
-  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
-  for (const label of ["Is adult", "Is available", "Wears lenses"]) {
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
+  for (const label of [
+    "만 19세 이상인가요?",
+    "모집 일정에 참여할 수 있나요?",
+    "시험 당일 렌즈를 착용할 예정인가요?",
+  ]) {
     const group = screen.getByRole("group", { name: label });
-    expectAssociatedError(group, "Choose yes or no.");
+    expectAssociatedError(group, "예 또는 아니요를 선택해 주세요.");
   }
 
   await answerAllEligibleQuestions(user);
-  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
-  await user.click(
-    screen.getByRole("button", { name: "Continue to application" }),
-  );
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
+  await user.click(screen.getByRole("button", { name: "지원서 작성하기" }));
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   for (const label of [
-    "Display name",
-    "Phone number",
-    "Birth date",
-    "Consent to this application",
+    "이름 또는 별명",
+    "전화번호",
+    "생년월일",
+    "이 공고 지원을 위한 개인정보 처리에 동의합니다",
   ]) {
     expectAssociatedError(screen.getByLabelText(label), expect.any(String));
   }
@@ -655,13 +683,15 @@ it("shows a private receipt without creating public profile UI", async () => {
   render(<ApplicationForm opportunity={makeupOpportunity} />);
   await reachApplicationForm(user);
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   expect(
-    await screen.findByRole("heading", { name: "Application received" }),
+    await screen.findByRole("heading", { name: "지원서를 받았습니다" }),
   ).toBeVisible();
-  expect(screen.getByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(screen.getByText(`접수 번호: ${applicationId}`)).toBeVisible();
   expect(
     screen.queryByRole("link", { name: /profile/i }),
   ).not.toBeInTheDocument();
@@ -677,11 +707,13 @@ it("persists only the applicant attendance capability and restores operable atte
   const view = render(<ApplicationForm opportunity={makeupOpportunity} />);
   await reachApplicationForm(user);
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   expect(
-    await screen.findByRole("button", { name: "Confirm attendance" }),
+    await screen.findByRole("button", { name: "참여 확정" }),
   ).toBeEnabled();
   const stored = localStorage.getItem(attendanceStorageKey);
   expect(stored).not.toBeNull();
@@ -706,12 +738,10 @@ it("persists only the applicant attendance capability and restores operable atte
   view.unmount();
   render(<ApplicationForm opportunity={makeupOpportunity} />);
   expect(
-    await screen.findByRole("heading", { name: "Application received" }),
+    await screen.findByRole("heading", { name: "지원서를 받았습니다" }),
   ).toBeVisible();
-  expect(screen.getByText(`Receipt: ${applicationId}`)).toBeVisible();
-  expect(
-    screen.getByRole("button", { name: "Confirm attendance" }),
-  ).toBeEnabled();
+  expect(screen.getByText(`접수 번호: ${applicationId}`)).toBeVisible();
+  expect(screen.getByRole("button", { name: "참여 확정" })).toBeEnabled();
 });
 
 it("shows the submission attempt as a private management code on a successful receipt", async () => {
@@ -721,19 +751,28 @@ it("shows the submission attempt as a private management code on a successful re
   render(<ApplicationForm opportunity={makeupOpportunity} />);
   await reachApplicationForm(user);
   await completeContactFields(user);
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 
   expect(
-    await screen.findByRole("heading", { name: "Application received" }),
+    await screen.findByRole("heading", { name: "지원서를 받았습니다" }),
   ).toBeVisible();
   const submissionAttemptId =
     submitApplicationMock.mock.calls[0]?.[0].submissionAttemptId;
-  expect(screen.getByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(screen.getByText(`접수 번호: ${applicationId}`)).toBeVisible();
   expect(
-    screen.getByText(`Private management code: ${submissionAttemptId}`),
+    screen.getByText(`비공개 관리 코드: ${submissionAttemptId}`),
   ).toBeVisible();
-  expect(screen.getByText(/do not share/i)).toBeVisible();
+  expect(screen.getByText(/다른 사람에게 공유하지 마세요/)).toBeVisible();
+});
+
+it("keeps recovery fields out of the primary application flow until requested", () => {
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+
+  expect(screen.getByText("기존 지원 내역 찾기")).toBeVisible();
+  expect(screen.getByLabelText("접수 번호")).not.toBeVisible();
 });
 
 it("recovers attendance and privacy controls from manually entered UUIDs after attendance storage expires", async () => {
@@ -749,22 +788,16 @@ it("recovers attendance and privacy controls from manually entered UUIDs after a
   const user = userEvent.setup();
   render(<ApplicationForm opportunity={makeupOpportunity} />);
 
-  expect(
-    screen.getByRole("heading", { name: "Recover application management" }),
-  ).toBeVisible();
-  await user.type(screen.getByLabelText("Application ID"), applicationId);
-  await user.type(
-    screen.getByLabelText("Private management code"),
-    pendingAttemptId,
-  );
-  await user.click(screen.getByRole("button", { name: "Recover management" }));
+  expect(screen.getByText("기존 지원 내역 찾기")).toBeVisible();
+  await user.click(screen.getByText("기존 지원 내역 찾기"));
+  await user.type(screen.getByLabelText("접수 번호"), applicationId);
+  await user.type(screen.getByLabelText("비공개 관리 코드"), pendingAttemptId);
+  await user.click(screen.getByRole("button", { name: "지원 내역 확인" }));
 
   expect(
-    await screen.findByRole("button", { name: "Confirm attendance" }),
+    await screen.findByRole("button", { name: "참여 확정" }),
   ).toBeEnabled();
-  expect(
-    screen.getByRole("region", { name: "Privacy controls" }),
-  ).toBeVisible();
+  expect(screen.getByRole("region", { name: "개인정보 관리" })).toBeVisible();
   expect(getAttendanceMock).toHaveBeenCalledWith({
     applicationId,
     opportunityId,
@@ -777,18 +810,16 @@ it("rejects invalid application recovery identifiers before rendering management
   const user = userEvent.setup();
   render(<ApplicationForm opportunity={makeupOpportunity} />);
 
-  await user.type(screen.getByLabelText("Application ID"), "not-a-uuid");
-  await user.type(
-    screen.getByLabelText("Private management code"),
-    "also-not-a-uuid",
-  );
-  await user.click(screen.getByRole("button", { name: "Recover management" }));
+  await user.click(screen.getByText("기존 지원 내역 찾기"));
+  await user.type(screen.getByLabelText("접수 번호"), "not-a-uuid");
+  await user.type(screen.getByLabelText("비공개 관리 코드"), "also-not-a-uuid");
+  await user.click(screen.getByRole("button", { name: "지원 내역 확인" }));
 
   expect(screen.getByRole("alert")).toHaveTextContent(
-    "Enter valid application ID and private management code.",
+    "올바른 접수 번호와 비공개 관리 코드를 입력해 주세요.",
   );
   expect(
-    screen.queryByRole("button", { name: "Confirm attendance" }),
+    screen.queryByRole("button", { name: "참여 확정" }),
   ).not.toBeInTheDocument();
   expect(getAttendanceMock).not.toHaveBeenCalled();
 });
@@ -800,15 +831,13 @@ it("keeps manually entered management codes out of the URL and logs", async () =
   window.history.replaceState({}, "", `/opportunities/${opportunityId}/apply`);
   render(<ApplicationForm opportunity={makeupOpportunity} />);
 
-  await user.type(screen.getByLabelText("Application ID"), applicationId);
-  await user.type(
-    screen.getByLabelText("Private management code"),
-    pendingAttemptId,
-  );
-  await user.click(screen.getByRole("button", { name: "Recover management" }));
+  await user.click(screen.getByText("기존 지원 내역 찾기"));
+  await user.type(screen.getByLabelText("접수 번호"), applicationId);
+  await user.type(screen.getByLabelText("비공개 관리 코드"), pendingAttemptId);
+  await user.click(screen.getByRole("button", { name: "지원 내역 확인" }));
 
   expect(
-    await screen.findByRole("region", { name: "Privacy controls" }),
+    await screen.findByRole("region", { name: "개인정보 관리" }),
   ).toBeVisible();
   expect(window.location.href).not.toContain(applicationId);
   expect(window.location.href).not.toContain(pendingAttemptId);
@@ -831,7 +860,34 @@ it("exposes the direct applicant route and keeps the recruiter drafting route us
 
   window.history.replaceState({}, "", "/opportunities/new");
   render(<App />);
-  expect(screen.getByRole("heading", { name: "Model Pass" })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "모델패스" })).toBeVisible();
+});
+
+it("switches a dirty applicant form to English without losing entered values", async () => {
+  getPublicOpportunityMock.mockResolvedValue(makeupOpportunity);
+  window.history.replaceState({}, "", `/opportunities/${opportunityId}/apply`);
+  const user = userEvent.setup();
+  render(<App />);
+
+  await screen.findByRole("heading", {
+    name: "Makeup certification practical exam",
+  });
+  await reachApplicationForm(user);
+  await user.type(screen.getByLabelText("이름 또는 별명"), "Applicant");
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
+
+  await user.click(screen.getByRole("button", { name: "English" }));
+
+  expect(
+    screen.getByRole("heading", { name: "Applicant information" }),
+  ).toBeVisible();
+  expect(screen.getByLabelText("Name or preferred name")).toHaveValue(
+    "Applicant",
+  );
+  expect(screen.getByText("Enter your phone number.")).toBeVisible();
+  expect(
+    screen.getByRole("button", { name: "Submit application" }),
+  ).toBeEnabled();
 });
 
 it("hides the old opportunity during a same-component route transition", async () => {
@@ -875,8 +931,10 @@ it("hides the old opportunity during a same-component route transition", async (
       name: "Makeup certification practical exam",
     }),
   ).not.toBeInTheDocument();
-  expect(screen.queryByText("Check eligibility")).not.toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("Loading opportunity");
+  expect(screen.queryByText("지원 조건 확인")).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent(
+    "공고를 불러오고 있습니다…",
+  );
 
   await act(async () => {
     resolveSecond?.(secondOpportunity);
@@ -906,7 +964,7 @@ it("rejects a loader response whose opportunity ID does not match the route", as
   render(<RouterProvider router={router} />);
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "This opportunity is unavailable.",
+    "이 공고를 볼 수 없습니다.",
   );
   expect(
     screen.queryByRole("heading", {
@@ -921,29 +979,31 @@ async function answerBooleanQuestion(
   answer: boolean,
 ) {
   const group = screen.getByRole("group", { name: question });
-  await user.click(within(group).getByLabelText(answer ? "Yes" : "No"));
+  await user.click(within(group).getByLabelText(answer ? "예" : "아니요"));
 }
 
 async function answerAllEligibleQuestions(
   user: ReturnType<typeof userEvent.setup>,
 ) {
-  await answerBooleanQuestion(user, "Is adult", true);
-  await answerBooleanQuestion(user, "Is available", true);
-  await answerBooleanQuestion(user, "Wears lenses", false);
+  await answerBooleanQuestion(user, "만 19세 이상인가요?", true);
+  await answerBooleanQuestion(user, "모집 일정에 참여할 수 있나요?", true);
+  await answerBooleanQuestion(
+    user,
+    "시험 당일 렌즈를 착용할 예정인가요?",
+    false,
+  );
 }
 
 async function reachApplicationForm(user: ReturnType<typeof userEvent.setup>) {
   await answerAllEligibleQuestions(user);
-  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
-  await user.click(
-    screen.getByRole("button", { name: "Continue to application" }),
-  );
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
+  await user.click(screen.getByRole("button", { name: "지원서 작성하기" }));
 }
 
 async function completeContactFields(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText("Display name"), "Applicant");
-  await user.type(screen.getByLabelText("Phone number"), "010-1234-5678");
-  await user.type(screen.getByLabelText("Birth date"), "2000-09-22");
+  await user.type(screen.getByLabelText("이름 또는 별명"), "Applicant");
+  await user.type(screen.getByLabelText("전화번호"), "010-1234-5678");
+  await user.type(screen.getByLabelText("생년월일"), "2000-09-22");
 }
 
 function expectAssociatedError(

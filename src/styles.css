@@ -130,11 +130,87 @@ li + li {
 .app-shell {
   width: min(100% - 2rem, 70rem);
   margin: 0 auto;
-  padding: clamp(2rem, 6vw, 5rem) 0;
+  padding: clamp(5rem, 8vw, 6rem) 0;
 }
 
 .app-shell--narrow {
   width: min(100% - 2rem, 34rem);
+}
+
+.language-toolbar {
+  position: absolute;
+  z-index: 1;
+  top: 0.75rem;
+  right: max(1rem, calc((100vw - 70rem) / 2));
+}
+
+.language-switch {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.language-switch button {
+  min-height: 2.75rem;
+  padding: 0.4rem 0.7rem;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--color-muted);
+  font-size: 0.85rem;
+}
+
+.language-switch button[aria-pressed="true"] {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.home-shell {
+  min-height: 100vh;
+  align-content: center;
+}
+
+.home-grid {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+}
+
+.home-card {
+  display: grid;
+  align-content: start;
+  gap: 0.75rem;
+  margin-top: 0;
+}
+
+.home-card > * {
+  margin-bottom: 0;
+}
+
+.home-note {
+  color: var(--color-muted);
+  font-size: 0.9rem;
+}
+
+.button-link {
+  display: inline-flex;
+  min-height: 2.75rem;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  padding: 0.7rem 1.25rem;
+  border-radius: var(--radius-sm);
+  background: var(--color-accent);
+  color: white;
+  text-decoration: none;
+}
+
+.button-link:hover {
+  background: var(--color-accent-hover);
+  color: white;
 }
 
 .auth-shell {
@@ -190,6 +266,15 @@ li + li {
   border-radius: var(--radius-md);
   background: #fbf7f2;
   box-shadow: none;
+}
+
+.recovery-panel > summary {
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.recovery-panel > form {
+  margin-top: 1.25rem;
 }
 
 .section-stack {
@@ -511,11 +596,11 @@ button:disabled {
 @media (max-width: 44rem) {
   .app-shell {
     width: min(100% - 1.25rem, 70rem);
-    padding: 1.5rem 0 3rem;
+    padding: 5rem 0 3rem;
   }
 
   .auth-shell {
-    padding-top: 3rem;
+    padding-top: 5rem;
   }
 
   .surface {

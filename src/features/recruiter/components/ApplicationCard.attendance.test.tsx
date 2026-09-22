@@ -60,18 +60,18 @@ it("requires an authenticated recruiter selection before loading attendance acti
   );
 
   expect(
-    await screen.findByText("Waiting for recruiter selection."),
+    await screen.findByText("모집자의 선택을 기다리고 있습니다."),
   ).toHaveAttribute("role", "status");
   expect(
-    screen.queryByRole("button", { name: "Confirm attendance" }),
+    screen.queryByRole("button", { name: "참여 확정" }),
   ).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Select application" }));
+  await user.click(screen.getByRole("button", { name: "지원자 선택" }));
   expect(selectApplicationMock).toHaveBeenCalledWith({
     applicationId,
     opportunityId,
   });
   expect(
-    await screen.findByRole("button", { name: "Confirm attendance" }),
+    await screen.findByRole("button", { name: "참여 확정" }),
   ).toBeEnabled();
   expect(getAttendanceMock).toHaveBeenCalledWith({
     applicationId,

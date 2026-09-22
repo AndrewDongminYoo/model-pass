@@ -6,6 +6,7 @@ import {
   type AttendanceCapability,
   type AttendanceStatus,
 } from "../../applications/api/attendance";
+import { useI18n } from "../../../i18n/locale";
 import type {
   AttendanceEvent,
   AttendanceEventType,
@@ -19,6 +20,8 @@ interface AttendanceManagerProps {
   initialEvents?: AttendanceEvent[];
   onSelectionStatus?: (selected: boolean) => void;
 }
+
+type AttendanceError = { kind: "load" } | { kind: "submit"; message?: string };
 
 const recruiterActions = new Set<AttendanceEventType>([
   "recruiter_confirmed",
@@ -39,12 +42,13 @@ export function AttendanceManager({
   initialEvents = [],
   onSelectionStatus,
 }: AttendanceManagerProps) {
+  const { t } = useI18n();
   const { applicationId, opportunityId, submissionAttemptId } = capability;
   const [attendance, setAttendance] = useState<AttendanceStatus>();
   const [loading, setLoading] = useState(true);
   const [pendingAction, setPendingAction] = useState<string>();
-  const [error, setError] = useState<string>();
-  const [success, setSuccess] = useState<string>();
+  const [error, setError] = useState<AttendanceError>();
+  const [success, setSuccess] = useState(false);
   const activeRef = useRef(true);
 
   async function load() {
@@ -65,7 +69,7 @@ export function AttendanceManager({
       }
     } catch {
       if (activeRef.current) {
-        setError("Could not load attendance history.");
+        setError({ kind: "load" });
       }
     } finally {
       if (activeRef.current) setLoading(false);
@@ -89,7 +93,7 @@ export function AttendanceManager({
       })
       .catch(() => {
         if (activeRef.current) {
-          setError("Could not load attendance history.");
+          setError({ kind: "load" });
         }
       })
       .finally(() => {
@@ -114,7 +118,7 @@ export function AttendanceManager({
     if (pendingAction !== undefined) return;
     setPendingAction(relatedEventId ?? eventType);
     setError(undefined);
-    setSuccess(undefined);
+    setSuccess(false);
     try {
       await recordAttendance({
         applicationId,
@@ -135,15 +139,16 @@ export function AttendanceManager({
       if (activeRef.current) {
         setAttendance(refreshed);
         onSelectionStatus?.(refreshed.selected);
-        setSuccess("Attendance updated.");
+        setSuccess(true);
       }
     } catch (submitError) {
       if (activeRef.current) {
-        setError(
-          submitError instanceof AttendanceRequestError
-            ? submitError.message
-            : "Could not update attendance. Try again.",
-        );
+        setError({
+          kind: "submit",
+          ...(submitError instanceof AttendanceRequestError
+            ? { message: submitError.message }
+            : {}),
+        });
       }
     } finally {
       if (activeRef.current) setPendingAction(undefined);
@@ -173,36 +178,53 @@ export function AttendanceManager({
   );
 
   return (
-    <section className="detail-section" aria-label="Attendance management">
+    <section
+      className="detail-section"
+      aria-label={t("Manage attendance", "참여 기록 관리")}
+    >
       <AttendanceSummary events={visibleEvents} viewerParty={viewerParty} />
-      {loading ? <p role="status">Loading attendance history.</p> : null}
-      {!loading && attendance?.selected === false ? (
-        <p role="status">Waiting for recruiter selection.</p>
+      {loading ? (
+        <p role="status">
+          {t("Loading attendance history…", "참여 이력을 불러오고 있습니다…")}
+        </p>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
-      {error === "Could not load attendance history." ? (
+      {!loading && attendance?.selected === false ? (
+        <p role="status">
+          {t(
+            "Waiting for recruiter selection.",
+            "모집자의 선택을 기다리고 있습니다.",
+          )}
+        </p>
+      ) : null}
+      {error ? <p role="alert">{attendanceErrorMessage(error, t)}</p> : null}
+      {error?.kind === "load" ? (
         <button
           className="button--secondary"
           type="button"
           disabled={loading}
           onClick={() => void load()}
         >
-          Retry attendance
+          {t("Retry", "다시 시도")}
         </button>
       ) : null}
       {success ? (
         <p className="status--success" role="status">
-          {success}
+          {t(
+            "Attendance history has been updated.",
+            "참여 기록을 업데이트했습니다.",
+          )}
         </p>
       ) : null}
       {pendingAction !== undefined ? (
-        <p role="status">Recording attendance.</p>
+        <p role="status">
+          {t("Saving attendance history…", "참여 기록을 저장하고 있습니다…")}
+        </p>
       ) : null}
       {!loading && attendance?.selected === true ? (
         <div
           className="button-row"
           role="group"
-          aria-label="Attendance actions"
+          aria-label={t("Attendance actions", "참여 기록 작업")}
         >
           {allowedActions.map((action) => (
             <button
@@ -214,7 +236,7 @@ export function AttendanceManager({
                 void submit(action, partyForAction(action, viewerParty))
               }
             >
-              {actionLabel(action)}
+              {actionLabel(action, t)}
             </button>
           ))}
           {disputableNoShows.map((event) => (
@@ -227,7 +249,10 @@ export function AttendanceManager({
                 void submit("dispute_opened", viewerParty, event.id)
               }
             >
-              Dispute {event.party} no-show
+              {t(
+                `Dispute ${event.party === "recruiter" ? "recruiter" : "applicant"} no-show`,
+                `${event.party === "recruiter" ? "모집자" : "지원자"} 불참 이의 제기`,
+              )}
             </button>
           ))}
         </div>
@@ -245,24 +270,59 @@ function partyForAction(
   return viewerParty;
 }
 
-function actionLabel(action: AttendanceEventType): string {
+function actionLabel(
+  action: AttendanceEventType,
+  t: (en: string, ko: string) => string,
+): string {
   switch (action) {
     case "recruiter_confirmed":
     case "applicant_confirmed":
-      return "Confirm attendance";
+      return t("Confirm attendance", "참여 확정");
     case "completed":
-      return "Mark completed";
+      return t("Record completion", "일정 완료 기록");
     case "recruiter_cancelled":
-      return "Record recruiter cancellation";
+      return t("Record recruiter cancellation", "모집자 취소 기록");
     case "applicant_cancelled":
-      return "Record applicant cancellation";
+      return t("Record applicant cancellation", "지원자 취소 기록");
     case "recruiter_no_show":
-      return "Record recruiter no-show";
+      return t("Record recruiter no-show", "모집자 불참 기록");
     case "applicant_no_show":
-      return "Record applicant no-show";
+      return t("Record applicant no-show", "지원자 불참 기록");
     case "dispute_opened":
-      return "Open dispute";
+      return t("Dispute", "이의 제기");
     case "dispute_resolved":
-      return "Resolve dispute";
+      return t("Resolve dispute", "이의 제기 처리");
   }
+}
+
+function attendanceErrorMessage(
+  error: AttendanceError,
+  t: (en: string, ko: string) => string,
+) {
+  if (error.kind === "submit" && error.message !== undefined) {
+    const koreanMessage: Record<string, string> = {
+      "Attendance access denied.": "참여 기록에 접근할 수 없습니다.",
+      "Attendance is unavailable until recruiter selection.":
+        "모집자가 지원자를 선택한 뒤 참여 기록을 사용할 수 있습니다.",
+      "Attendance confirmation is only available before the appointment.":
+        "참여 확정은 약속 시간 전까지만 할 수 있습니다.",
+      "Attendance outcomes are only available after the appointment starts.":
+        "일정 결과는 약속 시간이 시작된 뒤 기록할 수 있습니다.",
+      "Invalid attendance request.": "참여 기록 요청을 확인해 주세요.",
+    };
+    return t(
+      error.message,
+      koreanMessage[error.message] ??
+        "참여 기록을 업데이트하지 못했습니다. 다시 시도해 주세요.",
+    );
+  }
+  return error.kind === "load"
+    ? t(
+        "Could not load attendance history.",
+        "참여 이력을 불러오지 못했습니다.",
+      )
+    : t(
+        "Could not update attendance history. Please try again.",
+        "참여 기록을 업데이트하지 못했습니다. 다시 시도해 주세요.",
+      );
 }

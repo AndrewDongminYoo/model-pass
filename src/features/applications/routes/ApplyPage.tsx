@@ -5,13 +5,16 @@ import {
   type PublicOpportunity,
 } from "../api/get-public-opportunity";
 import { ApplicationForm } from "../components/ApplicationForm";
+import { appNameFor } from "../../../i18n/brand";
+import { useI18n } from "../../../i18n/locale";
 
 export function ApplyPage() {
+  const { locale, t } = useI18n();
   const { opportunityId } = useParams<{ opportunityId: string }>();
   const [loaded, setLoaded] = useState<{
     opportunityId: string;
     opportunity?: PublicOpportunity;
-    error?: string;
+    error?: boolean;
   }>();
 
   useEffect(() => {
@@ -28,7 +31,7 @@ export function ApplyPage() {
               ? { opportunityId, opportunity: result }
               : {
                   opportunityId,
-                  error: "This opportunity is unavailable.",
+                  error: true,
                 },
           );
         }
@@ -37,7 +40,7 @@ export function ApplyPage() {
         if (active) {
           setLoaded({
             opportunityId,
-            error: "This opportunity is unavailable.",
+            error: true,
           });
         }
       });
@@ -50,14 +53,18 @@ export function ApplyPage() {
   if (opportunityId === undefined) {
     return (
       <main className="app-shell app-shell--narrow auth-shell">
-        <p role="alert">This opportunity is unavailable.</p>
+        <p role="alert">
+          {t("This opportunity is unavailable.", "이 공고를 볼 수 없습니다.")}
+        </p>
       </main>
     );
   }
   if (loaded?.opportunityId === opportunityId && loaded.error !== undefined) {
     return (
       <main className="app-shell app-shell--narrow auth-shell">
-        <p role="alert">{loaded.error}</p>
+        <p role="alert">
+          {t("This opportunity is unavailable.", "이 공고를 볼 수 없습니다.")}
+        </p>
       </main>
     );
   }
@@ -67,7 +74,9 @@ export function ApplyPage() {
   ) {
     return (
       <main className="app-shell app-shell--narrow auth-shell">
-        <p role="status">Loading opportunity</p>
+        <p role="status">
+          {t("Loading opportunity…", "공고를 불러오고 있습니다…")}
+        </p>
       </main>
     );
   }
@@ -76,33 +85,41 @@ export function ApplyPage() {
   return (
     <main className="app-shell">
       <header className="page-header">
-        <p className="eyebrow">Model Pass · Application</p>
+        <p className="eyebrow">
+          {appNameFor(locale)} · {t("Model application", "모델 지원")}
+        </p>
         <h1>{opportunity.title}</h1>
         <p className="lede">
-          Check the session details and eligibility before sharing personal
-          information.
+          {t(
+            "Review the schedule and eligibility requirements before entering personal information.",
+            "개인정보를 입력하기 전에 일정과 지원 조건을 확인해 주세요.",
+          )}
         </p>
       </header>
       <dl className="summary-grid">
         <div>
-          <dt>Schedule</dt>
-          <dd>{new Date(opportunity.startsAt).toLocaleString()}</dd>
+          <dt>{t("Schedule", "일정")}</dt>
+          <dd>{formatDateTime(opportunity.startsAt, locale)}</dd>
         </div>
         <div>
-          <dt>Venue area</dt>
+          <dt>{t("Location", "장소")}</dt>
           <dd>{opportunity.venueDistrict}</dd>
         </div>
         <div>
-          <dt>Expected duration</dt>
-          <dd>{opportunity.expectedMinutes} minutes</dd>
+          <dt>{t("Estimated duration", "예상 소요 시간")}</dt>
+          <dd>
+            {locale === "ko"
+              ? `${opportunity.expectedMinutes}분`
+              : `${opportunity.expectedMinutes} minutes`}
+          </dd>
         </div>
         <div>
-          <dt>Benefit</dt>
-          <dd>{formatBenefit(opportunity)}</dd>
+          <dt>{t("Benefit", "혜택")}</dt>
+          <dd>{formatBenefit(opportunity, locale)}</dd>
         </div>
         <div>
-          <dt>Applications close</dt>
-          <dd>{new Date(opportunity.closesAt).toLocaleString()}</dd>
+          <dt>{t("Application deadline", "지원 마감")}</dt>
+          <dd>{formatDateTime(opportunity.closesAt, locale)}</dd>
         </div>
       </dl>
       <ApplicationForm key={opportunity.id} opportunity={opportunity} />
@@ -110,9 +127,24 @@ export function ApplyPage() {
   );
 }
 
-function formatBenefit(opportunity: PublicOpportunity): string {
+function formatDateTime(value: string, locale: "en" | "ko"): string {
+  return new Intl.DateTimeFormat(locale === "ko" ? "ko-KR" : "en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatBenefit(
+  opportunity: PublicOpportunity,
+  locale: "en" | "ko",
+): string {
   if (opportunity.benefit.type === "cash") {
-    return `${opportunity.benefit.amount.toLocaleString()} KRW — ${opportunity.benefit.description}`;
+    const amount = new Intl.NumberFormat(locale === "ko" ? "ko-KR" : "en-US", {
+      style: "currency",
+      currency: "KRW",
+      maximumFractionDigits: 0,
+    }).format(opportunity.benefit.amount);
+    return `${amount} · ${opportunity.benefit.description}`;
   }
   return opportunity.benefit.description;
 }

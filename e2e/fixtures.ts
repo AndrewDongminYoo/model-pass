@@ -34,6 +34,15 @@ interface PilotData {
 }
 
 export const test = base.extend<object, { pilotData: PilotData }>({
+  storageState: {
+    cookies: [],
+    origins: [
+      {
+        origin: e2eBaseUrl,
+        localStorage: [{ name: "model-pass-locale", value: "en" }],
+      },
+    ],
+  },
   pilotData: [
     async ({ browserName }, use) => {
       if (browserName !== "chromium") {
@@ -256,7 +265,10 @@ function storageState(
     origins: [
       {
         origin: e2eBaseUrl,
-        localStorage: [{ name: storageKey, value: JSON.stringify(session) }],
+        localStorage: [
+          { name: storageKey, value: JSON.stringify(session) },
+          { name: "model-pass-locale", value: "en" },
+        ],
       },
     ],
   };

@@ -7,6 +7,7 @@ import type {
   EvaluationResult,
   RuleDefinition,
 } from "../../eligibility/domain/types";
+import { useI18n } from "../../../i18n/locale";
 
 interface EligibilityFormProps {
   rules: readonly RuleDefinition[];
@@ -18,7 +19,6 @@ interface EligibilityFormProps {
 
 interface Question {
   field: string;
-  label: string;
   answerType: "boolean" | "number" | "text";
 }
 
@@ -29,8 +29,11 @@ export function EligibilityForm({
   onAnswersChange,
   onEvaluate,
 }: EligibilityFormProps) {
+  const { locale, t } = useI18n();
   const questions = questionsFor(rules);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [errors, setErrors] = useState<Record<string, "boolean" | "answer">>(
+    {},
+  );
 
   function setAnswer(field: string, value: AnswerValue) {
     setErrors((current) => {
@@ -43,14 +46,14 @@ export function EligibilityForm({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const nextErrors = Object.fromEntries(
+    const nextErrors: Record<string, "boolean" | "answer"> = Object.fromEntries(
       questions
         .filter(({ field }) => answers[field] === undefined)
         .map(({ field, answerType }) => [
           field,
-          answerType === "boolean" ? "Choose yes or no." : "Enter an answer.",
+          answerType === "boolean" ? "boolean" : "answer",
         ]),
-    );
+    ) as Record<string, "boolean" | "answer">;
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       return;
@@ -61,10 +64,16 @@ export function EligibilityForm({
 
   return (
     <form className="surface form-stack" noValidate onSubmit={handleSubmit}>
-      <h2>Check eligibility</h2>
+      <h2>{t("Check eligibility", "지원 조건 확인")}</h2>
       {questions.map((question) => {
         const errorId = `${question.field}-eligibility-error`;
         const error = errors[question.field];
+        const errorMessage =
+          error === "boolean"
+            ? t("Select yes or no.", "예 또는 아니요를 선택해 주세요.")
+            : error === "answer"
+              ? t("Enter an answer.", "답변을 입력해 주세요.")
+              : undefined;
 
         if (question.answerType === "boolean") {
           return (
@@ -74,7 +83,7 @@ export function EligibilityForm({
               aria-describedby={error ? errorId : undefined}
               aria-invalid={error ? true : undefined}
             >
-              <legend>{question.label}</legend>
+              <legend>{humanizeField(question.field, locale)}</legend>
               <div className="choice-options">
                 <label className="choice">
                   <input
@@ -84,7 +93,7 @@ export function EligibilityForm({
                     checked={answers[question.field] === true}
                     onChange={() => setAnswer(question.field, true)}
                   />
-                  Yes
+                  {t("Yes", "예")}
                 </label>
                 <label className="choice">
                   <input
@@ -94,10 +103,10 @@ export function EligibilityForm({
                     checked={answers[question.field] === false}
                     onChange={() => setAnswer(question.field, false)}
                   />
-                  No
+                  {t("No", "아니요")}
                 </label>
               </div>
-              {error ? <p id={errorId}>{error}</p> : null}
+              {errorMessage ? <p id={errorId}>{errorMessage}</p> : null}
             </fieldset>
           );
         }
@@ -105,7 +114,9 @@ export function EligibilityForm({
         const inputId = `${question.field}-answer`;
         return (
           <div className="field" key={question.field}>
-            <label htmlFor={inputId}>{question.label}</label>
+            <label htmlFor={inputId}>
+              {humanizeField(question.field, locale)}
+            </label>
             <input
               id={inputId}
               type={question.answerType === "number" ? "number" : "text"}
@@ -121,11 +132,11 @@ export function EligibilityForm({
                 )
               }
             />
-            {error ? <p id={errorId}>{error}</p> : null}
+            {errorMessage ? <p id={errorId}>{errorMessage}</p> : null}
           </div>
         );
       })}
-      <button type="submit">Check eligibility</button>
+      <button type="submit">{t("Check eligibility", "지원 조건 확인")}</button>
     </form>
   );
 }
@@ -145,7 +156,6 @@ function questionsFor(rules: readonly RuleDefinition[]): Question[] {
       : rule.expected;
     questions.set(rule.field, {
       field: rule.field,
-      label: humanizeField(rule.field),
       answerType:
         typeof expected === "boolean"
           ? "boolean"
@@ -157,7 +167,94 @@ function questionsFor(rules: readonly RuleDefinition[]): Question[] {
   return [...questions.values()];
 }
 
-function humanizeField(field: string): string {
+function humanizeField(field: string, locale: "en" | "ko"): string {
+  const labels: Record<string, { en: string; ko: string }> = {
+    isAdult: {
+      en: "Are you at least 19 years old?",
+      ko: "만 19세 이상인가요?",
+    },
+    isAvailable: {
+      en: "Can you attend the scheduled time?",
+      ko: "모집 일정에 참여할 수 있나요?",
+    },
+    meetsCurrentLengthRequirement: {
+      en: "Does your current hair length meet this opportunity's requirement?",
+      ko: "현재 머리 길이가 공고 조건에 맞나요?",
+    },
+    meetsCurrentStyleRequirement: {
+      en: "Does your current hairstyle meet this opportunity's requirement?",
+      ko: "현재 머리 모양이 공고 조건에 맞나요?",
+    },
+    meetsRecentDyeRequirement: {
+      en: "Does your recent dye history meet this opportunity's requirement?",
+      ko: "최근 염색 이력이 공고 조건에 맞나요?",
+    },
+    meetsRecentBleachRequirement: {
+      en: "Does your recent bleach history meet this opportunity's requirement?",
+      ko: "최근 탈색 이력이 공고 조건에 맞나요?",
+    },
+    meetsRecentPermRequirement: {
+      en: "Does your recent perm history meet this opportunity's requirement?",
+      ko: "최근 펌 이력이 공고 조건에 맞나요?",
+    },
+    acceptsTargetStyle: {
+      en: "Can you receive the style described in this opportunity?",
+      ko: "공고에 적힌 스타일로 시술받을 수 있나요?",
+    },
+    meetsRecruiterConstraints: {
+      en: "Do you meet this opportunity's other requirements?",
+      ko: "공고의 다른 조건에도 맞나요?",
+    },
+    matchesRequiredSex: {
+      en: "Do you meet the sex requirement in this opportunity?",
+      ko: "공고에서 요청한 성별 조건에 맞나요?",
+    },
+    hasPermanentOrSemiPermanentEyebrow: {
+      en: "Have you had permanent or semi-permanent eyebrow procedures?",
+      ko: "눈썹 문신이나 반영구 시술을 받은 적이 있나요?",
+    },
+    hasPermanentOrSemiPermanentEyeliner: {
+      en: "Have you had permanent or semi-permanent eyeliner procedures?",
+      ko: "아이라인 문신이나 반영구 시술을 받은 적이 있나요?",
+    },
+    hasPermanentOrSemiPermanentLipProcedure: {
+      en: "Have you had permanent or semi-permanent lip procedures?",
+      ko: "입술 문신이나 반영구 시술을 받은 적이 있나요?",
+    },
+    hasEyelashExtensions: {
+      en: "Do you currently have eyelash extensions?",
+      ko: "속눈썹 연장을 한 상태인가요?",
+    },
+    hasPersistentVisibleMarks: {
+      en: "Do you have identifying marks visible while wearing exam attire?",
+      ko: "시험복을 입어도 보이는 식별 표식이 있나요?",
+    },
+    hasVisibleTattooOrHenna: {
+      en: "Do you have tattoos or henna visible while wearing exam attire?",
+      ko: "시험복을 입어도 보이는 타투나 헤나가 있나요?",
+    },
+    hasVisibleNailArt: {
+      en: "Do you have nail art visible while wearing exam attire?",
+      ko: "시험복을 입어도 보이는 네일아트가 있나요?",
+    },
+    wearsDayOfMakeup: {
+      en: "Will you arrive wearing makeup on the exam day?",
+      ko: "시험 당일 메이크업을 한 채 방문할 예정인가요?",
+    },
+    wearsLenses: {
+      en: "Will you wear lenses on the exam day?",
+      ko: "시험 당일 렌즈를 착용할 예정인가요?",
+    },
+    wearsAccessories: {
+      en: "Will you wear accessories on the exam day?",
+      ko: "시험 당일 액세서리를 착용할 예정인가요?",
+    },
+    hasIdentityDocument: {
+      en: "Can you bring an identity document on the exam day?",
+      ko: "시험 당일 신분증을 가져올 수 있나요?",
+    },
+  };
+  if (labels[field] !== undefined) return labels[field][locale];
   const words = field
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replaceAll("_", " ");

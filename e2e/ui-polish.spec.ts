@@ -22,6 +22,7 @@ test("keeps the applicant flow touch-friendly and motion-safe on mobile", async 
     );
   expect(targetHeights.every((height) => height >= 44)).toBe(true);
 
+  await page.getByText("Find an existing application").click();
   const applicationId = page.getByLabel("Application ID");
   expect(
     await applicationId.evaluate((input) => getComputedStyle(input).boxShadow),
@@ -32,7 +33,7 @@ test("keeps the applicant flow touch-friendly and motion-safe on mobile", async 
     await applicationId.evaluate((input) => getComputedStyle(input).boxShadow),
   ).not.toBe("none");
 
-  const button = page.getByRole("button", { name: "Recover management" });
+  const button = page.getByRole("button", { name: "English" });
   expect(
     Number.parseFloat(
       await button.evaluate(

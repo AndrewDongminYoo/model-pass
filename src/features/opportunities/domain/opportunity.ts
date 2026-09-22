@@ -32,7 +32,7 @@ const rulesSchema = z.array(z.unknown()).transform((rules, context) => {
   try {
     return parseRuleDefinitions(rules);
   } catch {
-    context.addIssue({ code: "custom", message: "Rules must be valid." });
+    context.addIssue({ code: "custom", message: "rules_invalid" });
     return z.NEVER;
   }
 });
@@ -40,29 +40,29 @@ const rulesSchema = z.array(z.unknown()).transform((rules, context) => {
 export const opportunityDraftSchema = z
   .object({
     category: z.enum(["hair_promotion", "makeup_certification"]),
-    title: z.string().trim().min(1, "Enter the procedure."),
+    title: z.string().trim().min(1, "title_required"),
     startsAt: z
       .string()
-      .min(1, "Enter the start date.")
-      .refine(isFutureDate, "Start date must be in the future."),
+      .min(1, "starts_at_required")
+      .refine(isFutureDate, "starts_at_future"),
     closesAt: z
       .string()
-      .min(1, "Enter the closing date.")
-      .refine(isFutureDate, "Closing date must be in the future."),
-    venueDistrict: z.string().trim().min(1, "Enter the venue district."),
+      .min(1, "closes_at_required")
+      .refine(isFutureDate, "closes_at_future"),
+    venueDistrict: z.string().trim().min(1, "venue_district_required"),
     expectedMinutes: z.coerce
       .number()
       .int()
-      .positive("Enter the expected duration."),
+      .positive("expected_minutes_required"),
     benefit: z.discriminatedUnion("type", [
       z.object({
         type: z.literal("cash"),
-        amount: z.coerce.number().positive("Enter the cash amount."),
-        description: z.string().trim().min(1, "Enter the benefit description."),
+        amount: z.coerce.number().positive("cash_amount_required"),
+        description: z.string().trim().min(1, "benefit_description_required"),
       }),
       z.object({
         type: z.literal("procedure"),
-        description: z.string().trim().min(1, "Enter the benefit description."),
+        description: z.string().trim().min(1, "benefit_description_required"),
       }),
     ]),
     rulesetId: z.string().min(1),
@@ -73,7 +73,7 @@ export const opportunityDraftSchema = z
     if (Date.parse(closesAt) >= Date.parse(startsAt)) {
       context.addIssue({
         code: "custom",
-        message: "Closing date must be before the start date.",
+        message: "closes_at_before_starts_at",
         path: ["closesAt"],
       });
     }

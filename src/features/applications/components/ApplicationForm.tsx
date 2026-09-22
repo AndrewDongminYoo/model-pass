@@ -15,6 +15,7 @@ import {
 } from "../api/application-photos";
 import { AttendanceManager } from "../../attendance/components/AttendanceManager";
 import { ApplicantPrivacyControls } from "../../privacy/components/ApplicantPrivacyControls";
+import { useI18n } from "../../../i18n/locale";
 import { EligibilityForm } from "./EligibilityForm";
 import { EligibilityResult } from "./EligibilityResult";
 
@@ -34,6 +35,11 @@ type ContactField = keyof Pick<
   ContactValues,
   "displayName" | "phone" | "birthDate" | "currentApplicationConsent"
 >;
+
+interface LocalizedMessage {
+  en: string;
+  ko: string;
+}
 
 const initialContactValues: ContactValues = {
   displayName: "",
@@ -74,6 +80,7 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function ApplicationForm({ opportunity }: ApplicationFormProps) {
+  const { t } = useI18n();
   const [restoredAttendanceCapability] = useState(() =>
     loadAttendanceCapability(opportunity),
   );
@@ -87,18 +94,18 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   const [evaluation, setEvaluation] = useState<EvaluationResult>();
   const [showApplication, setShowApplication] = useState(false);
   const [contact, setContact] = useState(initialContactValues);
-  const [errors, setErrors] = useState<Partial<Record<ContactField, string>>>(
-    {},
-  );
-  const [submitError, setSubmitError] = useState<string>();
+  const [errors, setErrors] = useState<
+    Partial<Record<ContactField, LocalizedMessage>>
+  >({});
+  const [submitError, setSubmitError] = useState<LocalizedMessage>();
   const [pending, setPending] = useState(false);
   const [receiptCapability, setReceiptCapability] = useState<
     StoredAttendanceCapability | undefined
   >(restoredAttendanceCapability);
   const [recovery, setRecovery] = useState(initialRecoveryValues);
-  const [recoveryError, setRecoveryError] = useState<string>();
+  const [recoveryError, setRecoveryError] = useState<LocalizedMessage>();
   const [photo, setPhoto] = useState<File>();
-  const [photoError, setPhotoError] = useState<string>();
+  const [photoError, setPhotoError] = useState<LocalizedMessage>();
   const [photoPending, setPhotoPending] = useState(false);
   const [pendingPhotoApplication, setPendingPhotoApplication] = useState<{
     applicationId: string;
@@ -161,13 +168,21 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         className="surface"
         aria-labelledby="application-received-heading"
       >
-        <h2 id="application-received-heading">Application received</h2>
-        <p className="code-value">Receipt: {receiptCapability.applicationId}</p>
+        <h2 id="application-received-heading">
+          {t("Application received", "지원서를 받았습니다")}
+        </h2>
         <p className="code-value">
-          Private management code: {receiptCapability.submissionAttemptId}
+          {t("Application ID", "접수 번호")}: {receiptCapability.applicationId}
+        </p>
+        <p className="code-value">
+          {t("Private management code", "비공개 관리 코드")}:{" "}
+          {receiptCapability.submissionAttemptId}
         </p>
         <p className="callout callout--warning">
-          Keep this private management code and do not share it.
+          {t(
+            "Keep your private management code and do not share it with anyone.",
+            "비공개 관리 코드를 보관하고 다른 사람에게 공유하지 마세요.",
+          )}
         </p>
         <AttendanceManager
           capability={{
@@ -189,17 +204,34 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   }
 
   if (restorationStatus === "checking") {
-    return <p role="status">Checking photo application status.</p>;
+    return (
+      <p role="status">
+        {t(
+          "Checking photo submission status…",
+          "사진 제출 상태를 확인하고 있습니다…",
+        )}
+      </p>
+    );
   }
 
   if (restorationStatus === "unavailable") {
-    return <p role="alert">This photo application can no longer be resumed.</p>;
+    return (
+      <p role="alert">
+        {t(
+          "This photo submission can no longer be resumed.",
+          "이 사진 제출은 더 이상 이어서 진행할 수 없습니다.",
+        )}
+      </p>
+    );
   }
 
   if (restorationStatus === "error") {
     return (
       <p role="alert">
-        Could not check this photo application. Reload to try again.
+        {t(
+          "We could not check the photo submission status. Refresh and try again.",
+          "사진 제출 상태를 확인하지 못했습니다. 새로고침 후 다시 시도해 주세요.",
+        )}
       </p>
     );
   }
@@ -210,9 +242,19 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
   ) {
     return (
       <section className="surface" aria-labelledby="photo-required-heading">
-        <h2 id="photo-required-heading">Photo required to finish</h2>
+        <h2 id="photo-required-heading">
+          {t(
+            "Upload a photo to complete your application",
+            "사진을 올려야 지원이 완료됩니다",
+          )}
+        </h2>
         <div className="field">
-          <label htmlFor="job-specific-photo">Job-specific photo</label>
+          <label htmlFor="job-specific-photo">
+            {t(
+              "Photo requested for this opportunity",
+              "이 공고에서 요청한 사진",
+            )}
+          </label>
           <input
             id="job-specific-photo"
             type="file"
@@ -224,7 +266,10 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
             }}
           />
           <p className="helper-text">
-            JPEG, PNG, HEIC, or HEIF. Maximum 10 MiB.
+            {t(
+              "You can upload JPEG, PNG, HEIC, or HEIF files up to 10 MiB.",
+              "JPEG, PNG, HEIC, HEIF 파일을 올릴 수 있습니다. 최대 10MiB입니다.",
+            )}
           </p>
         </div>
         <button
@@ -234,9 +279,11 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
             void handlePhotoUpload(pendingPhotoApplication.applicationId)
           }
         >
-          {photoPending ? "Uploading photo" : "Upload photo"}
+          {photoPending
+            ? t("Uploading photo…", "사진을 올리고 있습니다…")
+            : t("Upload photo", "사진 올리기")}
         </button>
-        {photoError ? <p role="alert">{photoError}</p> : null}
+        {photoError ? <p role="alert">{messageText(photoError, t)}</p> : null}
       </section>
     );
   }
@@ -268,7 +315,12 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
       setReceiptCapability(capability);
       setPendingPhotoApplication(undefined);
     } catch {
-      setPhotoError("Could not upload the photo. Try again.");
+      setPhotoError(
+        message(
+          "We could not upload the photo. Try again.",
+          "사진을 올리지 못했습니다. 다시 시도해 주세요.",
+        ),
+      );
     } finally {
       photoUploadingRef.current = false;
       setPhotoPending(false);
@@ -309,7 +361,10 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
       !uuidPattern.test(submissionAttemptId)
     ) {
       setRecoveryError(
-        "Enter valid application ID and private management code.",
+        message(
+          "Enter a valid application ID and private management code.",
+          "올바른 접수 번호와 비공개 관리 코드를 입력해 주세요.",
+        ),
       );
       return;
     }
@@ -382,10 +437,15 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
           setShowApplication(false);
           setSubmitError(undefined);
         } else {
-          setSubmitError(error.message);
+          setSubmitError(localizedSubmissionError(error.message));
         }
       } else {
-        setSubmitError("Could not submit the application. Try again.");
+        setSubmitError(
+          message(
+            "We could not submit your application. Try again.",
+            "지원서를 제출하지 못했습니다. 다시 시도해 주세요.",
+          ),
+        );
       }
     } finally {
       submittingRef.current = false;
@@ -395,59 +455,61 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
 
   return (
     <div className="section-stack">
-      <form
-        className="surface surface--subtle form-stack"
-        noValidate
-        onSubmit={handleRecovery}
-      >
-        <h2>Recover application management</h2>
-        <div className="field">
-          <label htmlFor="recovery-application-id">Application ID</label>
-          <input
-            id="recovery-application-id"
-            type="text"
-            value={recovery.applicationId}
-            aria-describedby={recoveryError ? "recovery-error" : undefined}
-            aria-invalid={recoveryError ? true : undefined}
-            onChange={(event) => {
-              const applicationId = event.currentTarget.value;
-              setRecovery((current) => ({
-                ...current,
-                applicationId,
-              }));
-              setRecoveryError(undefined);
-            }}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="recovery-private-management-code">
-            Private management code
-          </label>
-          <input
-            id="recovery-private-management-code"
-            type="text"
-            value={recovery.submissionAttemptId}
-            aria-describedby={recoveryError ? "recovery-error" : undefined}
-            aria-invalid={recoveryError ? true : undefined}
-            onChange={(event) => {
-              const submissionAttemptId = event.currentTarget.value;
-              setRecovery((current) => ({
-                ...current,
-                submissionAttemptId,
-              }));
-              setRecoveryError(undefined);
-            }}
-          />
-        </div>
-        {recoveryError ? (
-          <p id="recovery-error" role="alert">
-            {recoveryError}
-          </p>
-        ) : null}
-        <button className="button--secondary" type="submit">
-          Recover management
-        </button>
-      </form>
+      <details className="surface surface--subtle recovery-panel">
+        <summary>
+          {t("Find an existing application", "기존 지원 내역 찾기")}
+        </summary>
+        <form className="form-stack" noValidate onSubmit={handleRecovery}>
+          <div className="field">
+            <label htmlFor="recovery-application-id">
+              {t("Application ID", "접수 번호")}
+            </label>
+            <input
+              id="recovery-application-id"
+              type="text"
+              value={recovery.applicationId}
+              aria-describedby={recoveryError ? "recovery-error" : undefined}
+              aria-invalid={recoveryError ? true : undefined}
+              onChange={(event) => {
+                const applicationId = event.currentTarget.value;
+                setRecovery((current) => ({
+                  ...current,
+                  applicationId,
+                }));
+                setRecoveryError(undefined);
+              }}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="recovery-private-management-code">
+              {t("Private management code", "비공개 관리 코드")}
+            </label>
+            <input
+              id="recovery-private-management-code"
+              type="text"
+              value={recovery.submissionAttemptId}
+              aria-describedby={recoveryError ? "recovery-error" : undefined}
+              aria-invalid={recoveryError ? true : undefined}
+              onChange={(event) => {
+                const submissionAttemptId = event.currentTarget.value;
+                setRecovery((current) => ({
+                  ...current,
+                  submissionAttemptId,
+                }));
+                setRecoveryError(undefined);
+              }}
+            />
+          </div>
+          {recoveryError ? (
+            <p id="recovery-error" role="alert">
+              {messageText(recoveryError, t)}
+            </p>
+          ) : null}
+          <button className="button--secondary" type="submit">
+            {t("View application", "지원 내역 확인")}
+          </button>
+        </form>
+      </details>
       <EligibilityForm
         rules={opportunity.rules}
         context={{
@@ -466,50 +528,63 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
       ) : null}
       {evaluation?.eligible && showApplication ? (
         <form className="surface form-stack" noValidate onSubmit={handleSubmit}>
-          <h2>Application details</h2>
+          <h2>{t("Applicant information", "지원자 정보")}</h2>
           <TextField
             id="applicant-display-name"
-            label="Display name"
+            label={t("Name or preferred name", "이름 또는 별명")}
             value={contact.displayName}
-            error={errors.displayName}
+            error={errors.displayName && messageText(errors.displayName, t)}
             onChange={(value) => setContactValue("displayName", value)}
           />
           <TextField
             id="applicant-phone"
-            label="Phone number"
+            label={t("Phone number", "전화번호")}
             type="tel"
             value={contact.phone}
-            error={errors.phone}
+            error={errors.phone && messageText(errors.phone, t)}
             onChange={(value) => setContactValue("phone", value)}
           />
           <TextField
             id="applicant-birth-date"
-            label="Birth date"
+            label={t("Date of birth", "생년월일")}
             type="date"
             value={contact.birthDate}
-            error={errors.birthDate}
+            error={errors.birthDate && messageText(errors.birthDate, t)}
             onChange={(value) => setContactValue("birthDate", value)}
           />
           <CheckboxField
             id="current-application-consent"
-            label="Consent to this application"
+            label={t(
+              "I consent to personal-data processing for this application.",
+              "이 공고 지원을 위한 개인정보 처리에 동의합니다",
+            )}
             checked={contact.currentApplicationConsent}
-            error={errors.currentApplicationConsent}
+            error={
+              errors.currentApplicationConsent &&
+              messageText(errors.currentApplicationConsent, t)
+            }
             onChange={(checked) =>
               setContactValue("currentApplicationConsent", checked)
             }
           />
           <CheckboxField
             id="future-opportunity-consent"
-            label="Future opportunity alerts"
+            label={t(
+              "Send me future opportunity alerts (optional)",
+              "향후 모집 알림을 받겠습니다(선택)",
+            )}
             checked={contact.futureOpportunityConsent}
             onChange={(checked) =>
               setContactValue("futureOpportunityConsent", checked)
             }
           />
-          {submitError ? <p role="alert">{submitError}</p> : null}
+          {submitError ? (
+            <p role="alert">{messageText(submitError, t)}</p>
+          ) : null}
           <button type="submit" disabled={pending}>
-            {pending ? "Submitting application" : "Submit application"}
+            {pending
+              ? t("Submitting application…", "지원서를 제출하고 있습니다…")
+              : t("Submit application", "지원서 제출")}
           </button>
         </form>
       ) : null}
@@ -787,20 +862,62 @@ function CheckboxField({
 
 function validateContact(
   contact: ContactValues,
-): Partial<Record<ContactField, string>> {
-  const errors: Partial<Record<ContactField, string>> = {};
+): Partial<Record<ContactField, LocalizedMessage>> {
+  const errors: Partial<Record<ContactField, LocalizedMessage>> = {};
   if (contact.displayName.trim() === "") {
-    errors.displayName = "Enter your display name.";
+    errors.displayName = message(
+      "Enter your name or preferred name.",
+      "이름 또는 별명을 입력해 주세요.",
+    );
   }
   if (contact.phone.trim() === "") {
-    errors.phone = "Enter your phone number.";
+    errors.phone = message(
+      "Enter your phone number.",
+      "전화번호를 입력해 주세요.",
+    );
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(contact.birthDate)) {
-    errors.birthDate = "Enter your birth date.";
+    errors.birthDate = message(
+      "Enter your date of birth.",
+      "생년월일을 입력해 주세요.",
+    );
   }
   if (!contact.currentApplicationConsent) {
-    errors.currentApplicationConsent =
-      "Consent is required for this application.";
+    errors.currentApplicationConsent = message(
+      "You must consent to personal-data processing to apply for this opportunity.",
+      "이 공고에 지원하려면 개인정보 처리에 동의해야 합니다.",
+    );
   }
   return errors;
+}
+
+function message(en: string, ko: string): LocalizedMessage {
+  return { en, ko };
+}
+
+function messageText(
+  value: LocalizedMessage,
+  t: (en: string, ko: string) => string,
+): string {
+  return t(value.en, value.ko);
+}
+
+function localizedSubmissionError(value: string): LocalizedMessage {
+  const knownMessages: Record<string, string> = {
+    "Applicants must be at least 19 years old.":
+      "지원자는 만 19세 이상이어야 합니다.",
+    "Submission attempt payload does not match the original application.":
+      "이전 지원과 입력 내용이 일치하지 않습니다.",
+    "The application does not satisfy this opportunity's rules.":
+      "지원서가 이 공고의 조건을 충족하지 않습니다.",
+    "Invalid application payload.": "지원서 입력 내용을 확인해 주세요.",
+    "Unable to submit the application.":
+      "지원서를 제출하지 못했습니다. 다시 시도해 주세요.",
+  };
+  if (knownMessages[value] !== undefined)
+    return message(value, knownMessages[value]);
+  return message(
+    value,
+    "지원서를 처리하지 못했습니다. 내용을 확인한 뒤 다시 시도해 주세요.",
+  );
 }

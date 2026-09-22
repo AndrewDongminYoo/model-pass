@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "../../../app/App";
+import { I18nProvider } from "../../../i18n/I18nProvider";
 import type { PublicOpportunity } from "../../applications/api/get-public-opportunity";
 import {
   RecruiterAuthenticationError,
@@ -198,22 +199,22 @@ it("withholds the receipt when photo upload fails and supports retry", async () 
   await submitEligibleApplication(user);
 
   expect(
-    screen.queryByText(`Receipt: ${applicationId}`),
+    screen.queryByText(`접수 번호: ${applicationId}`),
   ).not.toBeInTheDocument();
   const file = new File([new Uint8Array([1, 2, 3])], "requested.jpg", {
     type: "image/jpeg",
   });
-  await user.upload(screen.getByLabelText("Job-specific photo"), file);
-  await user.click(screen.getByRole("button", { name: "Upload photo" }));
+  await user.upload(screen.getByLabelText("이 공고에서 요청한 사진"), file);
+  await user.click(screen.getByRole("button", { name: "사진 올리기" }));
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Could not upload the photo. Try again.",
+    "사진을 올리지 못했습니다. 다시 시도해 주세요.",
   );
   expect(
-    screen.queryByText(`Receipt: ${applicationId}`),
+    screen.queryByText(`접수 번호: ${applicationId}`),
   ).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Upload photo" }));
-  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "사진 올리기" }));
+  expect(await screen.findByText(`접수 번호: ${applicationId}`)).toBeVisible();
   expect(uploadApplicationPhotoMock).toHaveBeenCalledTimes(2);
   expect(uploadApplicationPhotoMock).toHaveBeenLastCalledWith({
     applicationId,
@@ -244,22 +245,22 @@ it("does not claim photo success until the storage upload completes", async () =
   render(<ApplicationForm opportunity={opportunity} />);
   await submitEligibleApplication(user);
   await user.upload(
-    screen.getByLabelText("Job-specific photo"),
+    screen.getByLabelText("이 공고에서 요청한 사진"),
     new File([new Uint8Array([1])], "requested.heic", {
       type: "image/heic",
     }),
   );
 
-  await user.click(screen.getByRole("button", { name: "Upload photo" }));
+  await user.click(screen.getByRole("button", { name: "사진 올리기" }));
   expect(
-    screen.getByRole("button", { name: "Uploading photo" }),
+    screen.getByRole("button", { name: "사진을 올리고 있습니다…" }),
   ).toBeDisabled();
   expect(
     screen.queryByText("Photo uploaded privately."),
   ).not.toBeInTheDocument();
 
   resolveUpload?.({ applicationId, photoId, submissionState: "submitted" });
-  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
+  expect(await screen.findByText(`접수 번호: ${applicationId}`)).toBeVisible();
 });
 
 it("does not offer photo upload without a stored needs-review photo outcome", async () => {
@@ -281,8 +282,10 @@ it("does not offer photo upload without a stored needs-review photo outcome", as
 
   await submitEligibleApplication(user);
 
-  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
-  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  expect(await screen.findByText(`접수 번호: ${applicationId}`)).toBeVisible();
+  expect(
+    screen.queryByLabelText("이 공고에서 요청한 사진"),
+  ).not.toBeInTheDocument();
 });
 
 it("does not treat a non-needs-review outcome as photo authority", async () => {
@@ -307,8 +310,10 @@ it("does not treat a non-needs-review outcome as photo authority", async () => {
 
   await submitEligibleApplication(user);
 
-  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
-  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  expect(await screen.findByText(`접수 번호: ${applicationId}`)).toBeVisible();
+  expect(
+    screen.queryByLabelText("이 공고에서 요청한 사진"),
+  ).not.toBeInTheDocument();
 });
 
 it("does not use a photo outcome from a different stored ruleset", async () => {
@@ -326,8 +331,10 @@ it("does not use a photo outcome from a different stored ruleset", async () => {
 
   await submitEligibleApplication(user);
 
-  expect(await screen.findByText(`Receipt: ${applicationId}`)).toBeVisible();
-  expect(screen.queryByLabelText("Job-specific photo")).not.toBeInTheDocument();
+  expect(await screen.findByText(`접수 번호: ${applicationId}`)).toBeVisible();
+  expect(
+    screen.queryByLabelText("이 공고에서 요청한 사진"),
+  ).not.toBeInTheDocument();
 });
 
 it("renders deterministic evidence, private photos, and factual attendance without ranking UI", async () => {
@@ -343,32 +350,63 @@ it("renders deterministic evidence, private photos, and factual attendance witho
   );
 
   expect(screen.getByText("Applicant one")).toBeVisible();
-  expect(screen.getByText("2026-09-22T03:00:00.000Z")).toBeVisible();
-  expect(screen.getByText("Eligible")).toBeVisible();
-  expect(screen.getByText("Ruleset: hair-promotion v1")).toBeVisible();
   expect(
     screen.getByText(
-      "photo-required — input: null; effect: needs_review; reason: Upload the requested job-specific photo.",
+      new Date("2026-09-22T03:00:00.000Z").toLocaleString("ko-KR"),
     ),
   ).toBeVisible();
-  expect(screen.getByText("isAvailable: true")).toBeVisible();
+  expect(screen.getByText("지원 가능")).toBeVisible();
+  expect(screen.getByText("규칙 버전: hair-promotion v1")).toBeVisible();
   expect(
-    within(screen.getByRole("group", { name: "Applicant facts" })).getByText(
-      "Completed: 1",
+    screen.getByText(
+      "photo-required · 입력: 없음 · 판정: 검토 필요 · 이유: Upload the requested job-specific photo.",
     ),
   ).toBeVisible();
-  expect(screen.getByText("2026-09-22T04:00:00.000Z")).toBeVisible();
+  expect(screen.getByText("모집 일정 참여: 예")).toBeVisible();
+  expect(
+    within(screen.getByRole("group", { name: "지원자 기록" })).getByText(
+      "일정 완료: 1",
+    ),
+  ).toBeVisible();
+  expect(
+    screen.getByText(
+      new Date("2026-09-22T04:00:00.000Z").toLocaleString("ko-KR"),
+    ),
+  ).toBeVisible();
   expect(
     screen.queryByText(/rank|attractiveness|AI score|inferred fit/i),
   ).not.toBeInTheDocument();
 
-  await user.click(
-    screen.getByRole("button", { name: "View private photo 1" }),
-  );
+  await user.click(screen.getByRole("button", { name: "비공개 사진 1 보기" }));
   expect(createPhotoViewUrlMock).toHaveBeenCalledWith(applicationId, photoId);
   expect(
-    await screen.findByRole("link", { name: "Open private photo 1" }),
+    await screen.findByRole("link", { name: "비공개 사진 1 열기" }),
   ).toHaveAttribute("href", "https://storage.test/private-photo");
+});
+
+it("renders recruiter evidence in English when the English locale is selected", () => {
+  // Production break: hardcoding Korean labels conceals the stored deterministic reason and boolean answer from English-speaking recruiters.
+  localStorage.setItem("model-pass-locale", "en");
+  render(
+    <I18nProvider>
+      <ApplicationCard
+        application={application("Applicant one", "2026-09-22T03:00:00.000Z")}
+      />
+    </I18nProvider>,
+  );
+
+  expect(
+    screen.getByRole("heading", { name: "Deterministic evaluation" }),
+  ).toBeVisible();
+  expect(screen.getByText("Eligible")).toBeVisible();
+  expect(
+    screen.getByText(
+      "photo-required · Input: None · Effect: Needs review · Reason: Upload the requested job-specific photo.",
+    ),
+  ).toBeVisible();
+  expect(
+    screen.getByText("Available at the scheduled time: Yes"),
+  ).toBeVisible();
 });
 
 it("keeps recruiter applications in chronological submission order", async () => {
@@ -420,9 +458,11 @@ it("renders an authentication error instead of an anonymous empty state", async 
   );
 
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Sign in to review applications.",
+    "지원 내역을 보려면 로그인해 주세요.",
   );
-  expect(screen.queryByText("No applications yet.")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("아직 지원 내역이 없습니다."),
+  ).not.toBeInTheDocument();
 });
 
 it("exposes the recruiter applications route", async () => {
@@ -436,7 +476,7 @@ it("exposes the recruiter applications route", async () => {
   render(<App />);
 
   expect(
-    await screen.findByRole("heading", { name: "Applications" }),
+    await screen.findByRole("heading", { name: "지원 내역" }),
   ).toBeVisible();
 });
 
@@ -520,20 +560,23 @@ function application(
 async function submitEligibleApplication(
   user: ReturnType<typeof userEvent.setup>,
 ) {
-  for (const label of ["Is adult", "Is available"]) {
+  for (const label of [
+    "만 19세 이상인가요?",
+    "모집 일정에 참여할 수 있나요?",
+  ]) {
     await user.click(
-      within(screen.getByRole("group", { name: label })).getByLabelText("Yes"),
+      within(screen.getByRole("group", { name: label })).getByLabelText("예"),
     );
   }
-  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
+  await user.click(screen.getByRole("button", { name: "지원서 작성하기" }));
+  await user.type(screen.getByLabelText("이름 또는 별명"), "Applicant");
+  await user.type(screen.getByLabelText("전화번호"), "010-1234-5678");
+  await user.type(screen.getByLabelText("생년월일"), "2000-09-22");
   await user.click(
-    screen.getByRole("button", { name: "Continue to application" }),
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
   );
-  await user.type(screen.getByLabelText("Display name"), "Applicant");
-  await user.type(screen.getByLabelText("Phone number"), "010-1234-5678");
-  await user.type(screen.getByLabelText("Birth date"), "2000-09-22");
-  await user.click(screen.getByLabelText("Consent to this application"));
-  await user.click(screen.getByRole("button", { name: "Submit application" }));
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
 }
 
 function successfulSubmission() {

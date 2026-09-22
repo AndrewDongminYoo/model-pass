@@ -13,28 +13,32 @@ test("submits an eligible hair procedure-benefit application", async ({
   await expect(page.getByText("Hair treatment at no charge")).toBeVisible();
 
   for (const question of [
-    "Is adult",
-    "Meets current length requirement",
-    "Meets current style requirement",
-    "Meets recent dye requirement",
-    "Meets recent bleach requirement",
-    "Meets recent perm requirement",
-    "Accepts target style",
-    "Meets recruiter constraints",
-    "Is available",
+    "Are you at least 19 years old?",
+    "Does your current hair length meet this opportunity's requirement?",
+    "Does your current hairstyle meet this opportunity's requirement?",
+    "Does your recent dye history meet this opportunity's requirement?",
+    "Does your recent bleach history meet this opportunity's requirement?",
+    "Does your recent perm history meet this opportunity's requirement?",
+    "Can you receive the style described in this opportunity?",
+    "Do you meet this opportunity's other requirements?",
+    "Can you attend the scheduled time?",
   ]) {
     await page.getByRole("group", { name: question }).getByLabel("Yes").check();
   }
   await page.getByRole("button", { name: "Check eligibility" }).click();
   await expect(
-    page.getByRole("heading", { name: "Eligible to continue" }),
+    page.getByRole("heading", { name: "You can apply" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Continue to application" }).click();
+  await page.getByRole("button", { name: "Complete application" }).click();
 
-  await page.getByLabel("Display name").fill("Eligible Hair Applicant");
+  await page
+    .getByLabel("Name or preferred name")
+    .fill("Eligible Hair Applicant");
   await page.getByLabel("Phone number").fill("01055556666");
-  await page.getByLabel("Birth date").fill("1990-01-01");
-  await page.getByLabel("Consent to this application").check();
+  await page.getByLabel("Date of birth").fill("1990-01-01");
+  await page
+    .getByLabel("I consent to personal-data processing for this application.")
+    .check();
   await page.getByRole("button", { name: "Submit application" }).click();
 
   await expect(
@@ -73,7 +77,9 @@ test("submits an eligible hair procedure-benefit application", async ({
   await page.reload();
 
   await page.getByRole("button", { name: "Confirm attendance" }).click();
-  await expect(page.getByText("Attendance updated.")).toBeVisible();
+  await expect(
+    page.getByText("Attendance history has been updated."),
+  ).toBeVisible();
 
   await page
     .getByRole("button", { name: "Revoke future-opportunity consent" })

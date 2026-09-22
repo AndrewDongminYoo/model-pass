@@ -16,6 +16,8 @@ vi.mock("../lib/supabase/client", () => ({
 }));
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/");
+  window.localStorage.clear();
   authMock.getSession.mockReset();
   authMock.onAuthStateChange.mockReset();
   authMock.signInWithPassword.mockReset();
@@ -31,21 +33,56 @@ beforeEach(() => {
 it("renders the working product name", () => {
   render(<App />);
 
+  expect(screen.getByRole("heading", { name: "모델패스" })).toBeVisible();
+  expect(screen.getByText(/헤어·메이크업 시험 모델/)).toBeVisible();
+  expect(screen.queryByLabelText("이메일")).not.toBeInTheDocument();
+});
+
+it("switches the home screen to English and keeps the choice after remount", async () => {
+  const user = userEvent.setup();
+  const view = render(<App />);
+
+  await user.click(screen.getByRole("button", { name: "English" }));
+
+  expect(screen.getByRole("heading", { name: "Model Pass" })).toBeVisible();
+  expect(screen.getByText(/Hair and makeup exam models/)).toBeVisible();
+  expect(document.documentElement).toHaveAttribute("lang", "en");
+  expect(document.title).toBe("Model Pass");
+
+  view.unmount();
+  render(<App />);
   expect(screen.getByRole("heading", { name: "Model Pass" })).toBeVisible();
 });
 
 it("denies anonymous recruiters access to opportunity publication", async () => {
+  window.history.replaceState({}, "", "/opportunities/new");
   render(<App />);
 
   expect(
-    await screen.findByRole("heading", { name: "Recruiter sign in" }),
+    await screen.findByRole("heading", { name: "모집자 로그인" }),
   ).toBeVisible();
   expect(
-    screen.queryByRole("heading", { name: "Create opportunity" }),
+    screen.queryByRole("heading", { name: "모집 공고 만들기" }),
   ).not.toBeInTheDocument();
 });
 
+it("switches recruiter sign-in copy without discarding typed credentials", async () => {
+  window.history.replaceState({}, "", "/opportunities/new");
+  const user = userEvent.setup();
+  render(<App />);
+
+  const email = await screen.findByLabelText("이메일");
+  await user.type(email, "recruiter@example.com");
+  await user.click(screen.getByRole("button", { name: "English" }));
+
+  expect(
+    screen.getByRole("heading", { name: "Recruiter sign in" }),
+  ).toBeVisible();
+  expect(screen.getByLabelText("Email")).toHaveValue("recruiter@example.com");
+});
+
 it("allows an authenticated recruiter to reach opportunity drafting", async () => {
+  window.history.replaceState({}, "", "/opportunities/new");
   const user = userEvent.setup();
   authMock.signInWithPassword.mockResolvedValue({
     data: {
@@ -57,18 +94,18 @@ it("allows an authenticated recruiter to reach opportunity drafting", async () =
 
   render(<App />);
   await user.type(
-    await screen.findByLabelText("Email"),
+    await screen.findByLabelText("이메일"),
     "recruiter@example.com",
   );
   await user.type(
-    screen.getByLabelText("Password"),
+    screen.getByLabelText("비밀번호"),
     "correct horse battery staple",
   );
-  await user.click(screen.getByRole("button", { name: "Sign in" }));
+  await user.click(screen.getByRole("button", { name: "로그인" }));
 
   await waitFor(() =>
     expect(
-      screen.getByRole("heading", { name: "Create opportunity" }),
+      screen.getByRole("heading", { name: "모집 공고 만들기" }),
     ).toBeVisible(),
   );
   expect(authMock.signInWithPassword).toHaveBeenCalledWith({

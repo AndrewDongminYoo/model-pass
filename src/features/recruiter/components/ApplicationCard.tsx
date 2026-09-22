@@ -7,34 +7,34 @@ import {
 import { AttendanceSummary } from "../../attendance/components/AttendanceSummary";
 import { AttendanceManager } from "../../attendance/components/AttendanceManager";
 import { selectApplication } from "../../applications/api/attendance";
+import { useI18n } from "../../../i18n/locale";
+import { localizedRuleReason } from "../../eligibility/presentation/ko";
 
 interface ApplicationCardProps {
   application: RecruiterApplication;
 }
 
 export function ApplicationCard({ application }: ApplicationCardProps) {
+  const { locale, t } = useI18n();
   const { opportunityId } = useParams<{ opportunityId: string }>();
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
-  const [photoErrors, setPhotoErrors] = useState<Record<string, string>>({});
+  const [photoErrors, setPhotoErrors] = useState<Record<string, boolean>>({});
   const [pendingPhotoId, setPendingPhotoId] = useState<string>();
   const [selected, setSelected] = useState<boolean>();
   const [selectionPending, setSelectionPending] = useState(false);
-  const [selectionError, setSelectionError] = useState<string>();
+  const [selectionError, setSelectionError] = useState(false);
   const handleSelectionStatus = useCallback((value: boolean) => {
     setSelected(value);
   }, []);
 
   async function requestPhoto(photoId: string) {
     setPendingPhotoId(photoId);
-    setPhotoErrors((current) => ({ ...current, [photoId]: "" }));
+    setPhotoErrors((current) => ({ ...current, [photoId]: false }));
     try {
       const viewUrl = await createPhotoViewUrl(application.id, photoId);
       setPhotoUrls((current) => ({ ...current, [photoId]: viewUrl }));
     } catch {
-      setPhotoErrors((current) => ({
-        ...current,
-        [photoId]: "Could not open this private photo. Try again.",
-      }));
+      setPhotoErrors((current) => ({ ...current, [photoId]: true }));
     } finally {
       setPendingPhotoId(undefined);
     }
@@ -43,12 +43,12 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
   async function select() {
     if (opportunityId === undefined || selectionPending) return;
     setSelectionPending(true);
-    setSelectionError(undefined);
+    setSelectionError(false);
     try {
       await selectApplication({ applicationId: application.id, opportunityId });
       setSelected(true);
     } catch {
-      setSelectionError("Could not select this application. Try again.");
+      setSelectionError(true);
     } finally {
       setSelectionPending(false);
     }
@@ -68,41 +68,63 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
           <p>{application.applicantPhone}</p>
         </div>
         <p className="helper-text">
-          Submitted{" "}
-          <time dateTime={application.createdAt}>{application.createdAt}</time>
+          {t("Submitted", "지원 일시")}{" "}
+          <time dateTime={application.createdAt}>
+            {new Date(application.createdAt).toLocaleString(
+              locale === "ko" ? "ko-KR" : "en-US",
+            )}
+          </time>
         </p>
       </header>
-      <section className="detail-section" aria-label="Deterministic evaluation">
-        <h3>Deterministic evaluation</h3>
-        <p>{application.evaluation.eligible ? "Eligible" : "Not eligible"}</p>
+      <section
+        className="detail-section"
+        aria-label={t("Deterministic evaluation", "지원 조건 확인 결과")}
+      >
+        <h3>{t("Deterministic evaluation", "지원 조건 확인 결과")}</h3>
         <p>
-          Ruleset: {application.evaluation.rulesetId} v
+          {application.evaluation.eligible
+            ? t("Eligible", "지원 가능")
+            : t("Not eligible", "지원 불가")}
+        </p>
+        <p>
+          {t("Ruleset", "규칙 버전")}: {application.evaluation.rulesetId} v
           {application.evaluation.rulesetVersion}
         </p>
         {outcomes.length > 0 ? (
           <ul>
             {outcomes.map((outcome) => (
               <li key={`${outcome.effect}-${outcome.ruleId}`}>
-                {outcome.ruleId} — input: {String(outcome.input)}; effect:{" "}
-                {outcome.effect}; reason: {outcome.reason}
+                {outcome.ruleId} · {t("Input", "입력")}:{" "}
+                {displayValue(outcome.input, t)} · {t("Effect", "판정")}:{" "}
+                {effectLabel(outcome.effect, t)} · {t("Reason", "이유")}:{" "}
+                {localizedRuleReason(outcome.reason, locale)}
               </li>
             ))}
           </ul>
         ) : null}
       </section>
-      <section className="detail-section" aria-label="Application answers">
-        <h3>Answers</h3>
+      <section
+        className="detail-section"
+        aria-label={t("Application answers", "지원자 답변")}
+      >
+        <h3>{t("Answers", "지원자 답변")}</h3>
         <ul>
           {application.answers.map((answer) => (
             <li key={answer.field}>
-              {answer.field}: {String(answer.value)}
+              {answerFieldLabel(answer.field, t)}:{" "}
+              {displayValue(answer.value, t)}
             </li>
           ))}
         </ul>
       </section>
-      <section className="detail-section" aria-label="Private photos">
-        <h3>Private photos</h3>
-        {application.photos.length === 0 ? <p>No photo uploaded.</p> : null}
+      <section
+        className="detail-section"
+        aria-label={t("Private photos", "비공개 사진")}
+      >
+        <h3>{t("Private photos", "비공개 사진")}</h3>
+        {application.photos.length === 0 ? (
+          <p>{t("No photo uploaded.", "올린 사진이 없습니다.")}</p>
+        ) : null}
         {application.photos.map((photo, index) => {
           const ordinal = index + 1;
           const error = photoErrors[photo.id];
@@ -110,7 +132,9 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
           return (
             <div key={photo.id}>
               <p>
-                Photo {ordinal}: {photo.contentType}, {photo.byteSize} bytes
+                {t("Photo", "사진")} {ordinal}: {photo.contentType},{" "}
+                {photo.byteSize}
+                {t(" bytes", "바이트")}
               </p>
               <button
                 className="button--secondary"
@@ -119,8 +143,14 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
                 onClick={() => void requestPhoto(photo.id)}
               >
                 {pendingPhotoId === photo.id
-                  ? `Opening private photo ${ordinal}`
-                  : `View private photo ${ordinal}`}
+                  ? t(
+                      `Opening private photo ${ordinal}…`,
+                      `비공개 사진 ${ordinal}을 열고 있습니다…`,
+                    )
+                  : t(
+                      `View private photo ${ordinal}`,
+                      `비공개 사진 ${ordinal} 보기`,
+                    )}
               </button>
               {viewUrl !== undefined ? (
                 <a
@@ -129,10 +159,20 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
                   target="_blank"
                   rel="noreferrer"
                 >
-                  Open private photo {ordinal}
+                  {t(
+                    `Open private photo ${ordinal}`,
+                    `비공개 사진 ${ordinal} 열기`,
+                  )}
                 </a>
               ) : null}
-              {error ? <p role="alert">{error}</p> : null}
+              {error ? (
+                <p role="alert">
+                  {t(
+                    "Could not open this private photo. Try again.",
+                    "비공개 사진을 열지 못했습니다. 다시 시도해 주세요.",
+                  )}
+                </p>
+              ) : null}
             </div>
           );
         })}
@@ -152,12 +192,19 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
                 onClick={() => void select()}
               >
                 {selectionPending
-                  ? "Selecting application"
-                  : "Select application"}
+                  ? t("Selecting application…", "지원자를 선택하고 있습니다…")
+                  : t("Select application", "지원자 선택")}
               </button>
             </div>
           ) : null}
-          {selectionError ? <p role="alert">{selectionError}</p> : null}
+          {selectionError ? (
+            <p role="alert">
+              {t(
+                "Could not select this application. Try again.",
+                "지원자를 선택하지 못했습니다. 다시 시도해 주세요.",
+              )}
+            </p>
+          ) : null}
           <AttendanceManager
             key={selected === true ? "selected" : "pending"}
             capability={{ applicationId: application.id, opportunityId }}
@@ -169,4 +216,78 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
       )}
     </article>
   );
+}
+
+const answerFieldLabels: Record<string, readonly [string, string]> = {
+  isAdult: ["At least 19", "만 19세 이상"],
+  isAvailable: ["Available at the scheduled time", "모집 일정 참여"],
+  meetsCurrentLengthRequirement: [
+    "Hair length meets requirement",
+    "머리 길이 조건 충족",
+  ],
+  meetsCurrentStyleRequirement: [
+    "Hairstyle meets requirement",
+    "머리 모양 조건 충족",
+  ],
+  meetsRecentDyeRequirement: [
+    "Dye history meets requirement",
+    "염색 이력 조건 충족",
+  ],
+  meetsRecentBleachRequirement: [
+    "Bleach history meets requirement",
+    "탈색 이력 조건 충족",
+  ],
+  meetsRecentPermRequirement: [
+    "Perm history meets requirement",
+    "펌 이력 조건 충족",
+  ],
+  acceptsTargetStyle: ["Accepts target style", "요청 스타일 수락"],
+  meetsRecruiterConstraints: ["Meets other requirements", "기타 조건 충족"],
+  matchesRequiredSex: ["Meets sex requirement", "성별 조건 충족"],
+  hasPermanentOrSemiPermanentEyebrow: ["Eyebrow procedure", "눈썹 반영구 시술"],
+  hasPermanentOrSemiPermanentEyeliner: [
+    "Eyeliner procedure",
+    "아이라인 반영구 시술",
+  ],
+  hasPermanentOrSemiPermanentLipProcedure: [
+    "Lip procedure",
+    "입술 반영구 시술",
+  ],
+  hasEyelashExtensions: ["Eyelash extensions", "속눈썹 연장"],
+  hasPersistentVisibleMarks: ["Visible identifying marks", "보이는 식별 표식"],
+  hasVisibleTattooOrHenna: ["Visible tattoos or henna", "보이는 타투·헤나"],
+  hasVisibleNailArt: ["Visible nail art", "보이는 네일아트"],
+  wearsDayOfMakeup: ["Makeup on exam day", "시험 당일 메이크업"],
+  wearsLenses: ["Lenses on exam day", "시험 당일 렌즈"],
+  wearsAccessories: ["Accessories on exam day", "시험 당일 액세서리"],
+  hasIdentityDocument: ["Can bring identity document", "신분증 지참 가능"],
+};
+
+function answerFieldLabel(
+  field: string,
+  t: (en: string, ko: string) => string,
+): string {
+  const label = answerFieldLabels[field];
+  return label === undefined ? field : t(...label);
+}
+
+function displayValue(value: unknown, t: (en: string, ko: string) => string) {
+  if (value === true) return t("Yes", "예");
+  if (value === false) return t("No", "아니요");
+  if (value === null) return t("None", "없음");
+  return String(value);
+}
+
+function effectLabel(
+  effect: "hard_fail" | "needs_review" | "reminder",
+  t: (en: string, ko: string) => string,
+) {
+  switch (effect) {
+    case "hard_fail":
+      return t("Hard fail", "지원 불가");
+    case "needs_review":
+      return t("Needs review", "검토 필요");
+    case "reminder":
+      return t("Reminder", "안내");
+  }
 }

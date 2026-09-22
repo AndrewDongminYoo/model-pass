@@ -1,0 +1,101 @@
+name: Photo retention cleanup
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: photo-retention-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Invoke photo retention cleanup
+        env:
+          SUPABASE_URL: ${{ secrets.MODEL_PASS_SUPABASE_URL }}
+          OPERATOR_TOKEN: ${{ secrets.MODEL_PASS_OPERATOR_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          if ! http_status="$(curl --silent --fail-with-body --max-time 60 --connect-timeout 10 --output "$response_file" --write-out '%{http_code}' --request POST --header "Authorization: Bearer ${OPERATOR_TOKEN}" --header "Content-Type: application/json" --data '{"dryRun":false}' "${SUPABASE_URL}/functions/v1/cleanup-expired-photos")"; then
+            echo "Photo retention cleanup request failed."
+            exit 1
+          fi
+
+          if [ "$http_status" != "200" ]; then
+            echo "Photo retention cleanup returned an unexpected HTTP status."
+            exit 1
+          fi
+
+          node --input-type=module - "$response_file" <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const fail = (message) => {
+            console.error(message);
+            process.exit(1);
+          };
+          const isCount = (value) =>
+            Number.isSafeInteger(value) && value >= 0;
+          const hasExactKeys = (value, keys) =>
+            typeof value === "object" &&
+            value !== null &&
+            !Array.isArray(value) &&
+            Object.keys(value).length === keys.length &&
+            keys.every((key) => Object.hasOwn(value, key));
+
+          let result;
+          try {
+            result = JSON.parse(readFileSync(process.argv[2], "utf8"));
+          } catch {
+            fail("Photo retention cleanup returned invalid JSON.");
+          }
+
+          if (
+            !hasExactKeys(result, [
+              "invocationId",
+              "dryRun",
+              "photos",
+              "reservations",
+              "pendingDrafts",
+            ]) ||
+            typeof result.invocationId !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+              result.invocationId,
+            ) ||
+            result.dryRun !== false ||
+            !hasExactKeys(result.photos, ["eligible", "held", "deleted", "failed"]) ||
+            !hasExactKeys(result.reservations, [
+              "eligible",
+              "metadataMatched",
+              "orphansDeleted",
+              "failed",
+            ]) ||
+            !hasExactKeys(result.pendingDrafts, [
+              "eligible",
+              "projectedEligibleAfterReconciliation",
+              "deleted",
+            ]) ||
+            !Object.values(result.photos).every(isCount) ||
+            !Object.values(result.reservations).every(isCount) ||
+            !Object.values(result.pendingDrafts).every(isCount)
+          ) {
+            fail("Photo retention cleanup returned an invalid response shape.");
+          }
+
+          if (result.photos.failed !== 0 || result.reservations.failed !== 0) {
+            fail("Photo retention cleanup reported photo or reservation failures.");
+          }
+
+          console.log(
+            `Photo retention cleanup summary: invocation=${result.invocationId} photos_eligible=${result.photos.eligible} photos_held=${result.photos.held} photos_deleted=${result.photos.deleted} reservations_eligible=${result.reservations.eligible} reservations_metadata_matched=${result.reservations.metadataMatched} reservations_orphans_deleted=${result.reservations.orphansDeleted} pending_drafts_eligible=${result.pendingDrafts.eligible} pending_drafts_deleted=${result.pendingDrafts.deleted}`,
+          );
+          NODE

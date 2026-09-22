@@ -135,6 +135,7 @@ export function createSupabaseDependencies(
         .select("storage_path")
         .eq("id", photoId)
         .eq("application_id", applicationId)
+        .is("deleted_at", null)
         .maybeSingle<PhotoRow>();
       if (photoError !== null) {
         throw new Error(`Failed to load photo: ${photoError.message}`);

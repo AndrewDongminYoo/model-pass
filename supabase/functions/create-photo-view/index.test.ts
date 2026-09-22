@@ -1,4 +1,8 @@
-import { createPhotoViewHandler, type PhotoViewDependencies } from "./index.ts";
+import {
+  createPhotoViewHandler,
+  createSupabaseDependencies,
+  type PhotoViewDependencies,
+} from "./index.ts";
 
 type TestFunction = () => void | Promise<void>;
 type TestRegistrar = (name: string, testFunction: TestFunction) => void;
@@ -87,6 +91,66 @@ registerTest("rejects an unauthenticated view request", async () => {
   assertEquals("viewUrl" in ((await response.json()) as object), false);
 });
 
+registerTest(
+  "excludes soft-deleted metadata in the production photo query",
+  async () => {
+    // Production break: removing the deleted_at null filter lets the service-role query return a deleted private photo.
+    const photoFilters: Array<[string, string, unknown]> = [];
+    let excludesDeletedPhotos = false;
+    const photoQuery = {
+      select: () => photoQuery,
+      eq: (column: string, value: unknown) => {
+        photoFilters.push(["eq", column, value]);
+        return photoQuery;
+      },
+      is: (column: string, value: unknown) => {
+        photoFilters.push(["is", column, value]);
+        excludesDeletedPhotos = column === "deleted_at" && value === null;
+        return photoQuery;
+      },
+      maybeSingle: () =>
+        Promise.resolve({
+          data: excludesDeletedPhotos ? null : { storage_path: storagePath },
+          error: null,
+        }),
+    };
+    const applicationQuery = {
+      select: () => applicationQuery,
+      eq: () => applicationQuery,
+      maybeSingle: () =>
+        Promise.resolve({
+          data: { opportunity_id: "00000000-0000-4000-8000-000000000001" },
+          error: null,
+        }),
+    };
+    const opportunityQuery = {
+      select: () => opportunityQuery,
+      eq: () => opportunityQuery,
+      maybeSingle: () =>
+        Promise.resolve({ data: { id: "opportunity" }, error: null }),
+    };
+    const client = {
+      from: (table: string) => {
+        if (table === "application_photos") return photoQuery;
+        if (table === "applications") return applicationQuery;
+        if (table === "opportunities") return opportunityQuery;
+        throw new Error(`Unexpected table: ${table}`);
+      },
+    };
+
+    const result = await createSupabaseDependencies(
+      client as never,
+    ).loadOwnedPhoto(recruiterId, applicationId, photoId);
+
+    assertEquals(photoFilters, [
+      ["eq", "id", photoId],
+      ["eq", "application_id", applicationId],
+      ["is", "deleted_at", null],
+    ]);
+    assertEquals(result, null);
+  },
+);
+
 function request(authorization?: string) {
   const headers = new Headers({ "Content-Type": "application/json" });
   if (authorization !== undefined) {
@@ -102,7 +166,9 @@ function request(authorization?: string) {
 function assertEquals(actual: unknown, expected: unknown) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(
-      `Expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+      `Expected ${JSON.stringify(expected)}, received ${JSON.stringify(
+        actual,
+      )}`,
     );
   }
 }

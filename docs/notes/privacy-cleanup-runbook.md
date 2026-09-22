@@ -7,6 +7,24 @@ The function does not delete submitted applications.
 Invoke it only with a service-role token or an authenticated operator JWT.
 Never place either token in client code, logs, or documentation.
 
+## Scheduled Execution
+
+GitHub Actions runs [photo-retention-cleanup.yml](../../.github/workflows/photo-retention-cleanup.yml) every day at 03:17 UTC and supports an operator-initiated `workflow_dispatch` run.
+The workflow sends exactly `{"dryRun":false}` to the cleanup function.
+It has no GitHub token permissions and permits one active cleanup run at a time; queued runs do not cancel an in-progress cleanup.
+The workflow reads only the `MODEL_PASS_SUPABASE_URL` and `MODEL_PASS_OPERATOR_TOKEN` repository secrets.
+It never prints either secret or the request URL.
+
+A designated repository administrator owns setting, rotating, and removing those two repository secrets.
+The production privacy operator owns reviewing failed runs and the resulting cleanup evidence.
+Assign both roles before enabling the workflow in a production repository.
+Do not store either value as a workflow variable, environment-level plaintext value, or local documentation example.
+
+The scheduled production run intentionally has no preceding dry run.
+It validates that the response is an HTTP 200 JSON response with the expected cleanup-result shape, that `dryRun` is `false`, and that photo and reservation failure counts are zero.
+It writes only a non-sensitive summary to the job log: invocation UUID and aggregate eligible, held, reconciled, and deleted counts.
+An invalid response, transport or HTTP failure, or nonzero photo or reservation failure count fails the job.
+
 ## Cleanup Order
 
 One invocation uses this order:
@@ -44,7 +62,7 @@ select
     as projected_eligible_after_reconciliation;
 ```
 
-Invoke a non-mutating function pass before every production cleanup:
+Invoke a non-mutating function pass before every manual retry or other non-routine production cleanup:
 
 ```bash
 curl --fail-with-body \
@@ -75,6 +93,9 @@ curl --fail-with-body \
 ```
 
 Record the returned invocation UUID, deleted count, held count, reservation counts, pending-draft count, and failure counts in the private operations log.
+
+For a scheduled or manually dispatched GitHub Actions run, also retain the workflow run URL, start and finish time, conclusion, and non-sensitive job-log summary with the invocation UUID in that private operations log.
+Use the invocation UUID for the database evidence queries below and for the cleanup function logs.
 
 ## Evidence Check
 
@@ -119,6 +140,16 @@ A photo cleanup claim and a new retention hold are serialized on the application
 If a claim is active, opening a dispute or another hold fails with a retryable transaction error before the hold is recorded.
 
 ## Retry and Recovery
+
+When the scheduled workflow fails, do not suppress or rerun it blindly.
+First review the failed job's generic error category and the cleanup function logs by invocation UUID when one was returned.
+Run the Dry Run query and function pass above before an operator starts a manual `workflow_dispatch` retry.
+Record the retry's workflow run URL and invocation UUID with the original failed run.
+
+Disable the scheduled workflow immediately when a cleanup result has nonzero failure counts, an evidence query contradicts the invocation summary, or there is any indication that Storage deletion and metadata evidence disagree.
+A repository administrator disables the workflow in GitHub Actions and records the time and reason in the private operations log.
+Escalate to the production privacy operator and the engineering owner before re-enabling it.
+Re-enable only after the discrepancy is resolved, the Evidence Check passes for the affected invocation, and a supervised manual run completes without failures.
 
 If Storage returns a clear pre-delete rejection (`400`, `401`, `403`, `405`, `413`, `415`, or `422`), the function releases its matching photo or reservation claim, preserves database evidence, and increments the failure count.
 If Storage returns `404` or `410`, the exact object is already absent, so cleanup keeps the claim and completes photo metadata finalization or reservation deletion.

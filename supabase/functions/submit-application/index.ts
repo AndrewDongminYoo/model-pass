@@ -22,6 +22,8 @@ export interface OpportunityForSubmission {
 
 export interface ApplicationPersistenceCommand {
   opportunityId: string;
+  submissionAttemptId: string;
+  submissionFingerprint: string;
   applicant: SubmitApplicationInput["applicant"];
   answers: SubmitApplicationInput["answers"];
   currentApplicationConsent: true;
@@ -77,10 +79,7 @@ export async function submitApplication(
   const parsedInput = parseSubmitApplicationInput(input);
 
   if (!isAtLeast19(parsedInput.applicant.birthDate, dependencies.now())) {
-    throw new SubmissionError(
-      "Applicants must be at least 19 years old.",
-      422,
-    );
+    throw new SubmissionError("Applicants must be at least 19 years old.", 422);
   }
 
   const opportunity = await dependencies.loadOpportunity(
@@ -132,8 +131,9 @@ export async function submitApplication(
 
   const rulesSnapshot = structuredClone(opportunity.rules);
   const evaluationSnapshot = structuredClone(evaluation);
-  const applicationId = await dependencies.persistApplication({
+  const persistencePayload = {
     opportunityId: opportunity.id,
+    submissionAttemptId: parsedInput.submissionAttemptId,
     applicant: parsedInput.applicant,
     answers: evaluatedAnswers,
     currentApplicationConsent: parsedInput.currentApplicationConsent,
@@ -142,12 +142,43 @@ export async function submitApplication(
     rulesetVersion: opportunity.rulesetVersion,
     rulesSnapshot,
     evaluationSnapshot,
+  };
+  const applicationId = await dependencies.persistApplication({
+    ...persistencePayload,
+    submissionFingerprint:
+      await createSubmissionFingerprint(persistencePayload),
   });
 
   return {
     applicationId,
     evaluation,
   };
+}
+
+export async function createSubmissionFingerprint(
+  command: Omit<ApplicationPersistenceCommand, "submissionFingerprint">,
+): Promise<string> {
+  const canonical = canonicalJson(command);
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonical),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    return `{${Object.entries(value)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function isAtLeast19(birthDate: string, currentDate: Date): boolean {
@@ -241,12 +272,13 @@ export function createSupabaseDependencies(
         "submit_application_transaction",
         {
           p_opportunity_id: command.opportunityId,
+          p_submission_attempt_id: command.submissionAttemptId,
+          p_submission_fingerprint: command.submissionFingerprint,
           p_applicant_display_name: command.applicant.displayName,
           p_applicant_phone: command.applicant.phone,
           p_applicant_birth_date: command.applicant.birthDate,
           p_answers: command.answers,
-          p_current_application_consent:
-            command.currentApplicationConsent,
+          p_current_application_consent: command.currentApplicationConsent,
           p_future_opportunity_consent: command.futureOpportunityConsent,
           p_ruleset_id: command.rulesetId,
           p_ruleset_version: command.rulesetVersion,
@@ -279,7 +311,10 @@ export function createSubmitApplicationHandler(
     }
 
     try {
-      const result = await submitApplication(await request.json(), dependencies);
+      const result = await submitApplication(
+        await request.json(),
+        dependencies,
+      );
       return jsonResponse(result, 201);
     } catch (error) {
       if (error instanceof SubmissionError) {
@@ -319,5 +354,7 @@ if (import.meta.main) {
   const client = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
-  Deno.serve(createSubmitApplicationHandler(createSupabaseDependencies(client)));
+  Deno.serve(
+    createSubmitApplicationHandler(createSupabaseDependencies(client)),
+  );
 }

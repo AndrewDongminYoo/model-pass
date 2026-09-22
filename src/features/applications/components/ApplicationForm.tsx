@@ -5,7 +5,10 @@ import type {
   EvaluationResult,
 } from "../../eligibility/domain/types";
 import type { PublicOpportunity } from "../api/get-public-opportunity";
-import { submitApplication } from "../api/submit-application";
+import {
+  ApplicationSubmissionError,
+  submitApplication,
+} from "../api/submit-application";
 import { EligibilityForm } from "./EligibilityForm";
 import { EligibilityResult } from "./EligibilityResult";
 
@@ -35,6 +38,7 @@ const initialContactValues: ContactValues = {
 };
 
 export function ApplicationForm({ opportunity }: ApplicationFormProps) {
+  const [submissionAttemptId] = useState(() => crypto.randomUUID());
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
   const [evaluation, setEvaluation] = useState<EvaluationResult>();
   const [showApplication, setShowApplication] = useState(false);
@@ -100,6 +104,7 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
     try {
       const result = await submitApplication({
         opportunityId: opportunity.id,
+        submissionAttemptId,
         applicant: {
           displayName: contact.displayName.trim(),
           phone: contact.phone.trim(),
@@ -112,8 +117,18 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         futureOpportunityConsent: contact.futureOpportunityConsent,
       });
       setReceiptId(result.applicationId);
-    } catch {
-      setSubmitError("Could not submit the application. Try again.");
+    } catch (error) {
+      if (error instanceof ApplicationSubmissionError) {
+        if (error.evaluation !== undefined && !error.evaluation.eligible) {
+          setEvaluation(error.evaluation);
+          setShowApplication(false);
+          setSubmitError(undefined);
+        } else {
+          setSubmitError(error.message);
+        }
+      } else {
+        setSubmitError("Could not submit the application. Try again.");
+      }
     } finally {
       submittingRef.current = false;
       setPending(false);

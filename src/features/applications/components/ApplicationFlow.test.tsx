@@ -1,8 +1,15 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { FunctionsHttpError } from "@supabase/supabase-js";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { App } from "../../../app/App";
 import type { PublicOpportunity } from "../api/get-public-opportunity";
+import {
+  ApplicationSubmissionError,
+  parseApplicationSubmissionHttpError,
+} from "../api/submit-application";
+import { ApplyPage } from "../routes/ApplyPage";
 import { ApplicationForm } from "./ApplicationForm";
 
 const { getPublicOpportunityMock, submitApplicationMock } = vi.hoisted(() => ({
@@ -126,6 +133,9 @@ it("defaults future alerts to unchecked and submits false", async () => {
 
   expect(submitApplicationMock).toHaveBeenCalledWith({
     opportunityId,
+    submissionAttemptId: expect.stringMatching(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    ),
     applicant: {
       displayName: "Applicant",
       phone: "010-1234-5678",
@@ -164,6 +174,115 @@ it("preserves answers after a recoverable submit error and allows retry", async 
     await screen.findByRole("heading", { name: "Application received" }),
   ).toBeVisible();
   expect(submitApplicationMock).toHaveBeenCalledTimes(2);
+  const firstAttemptId =
+    submitApplicationMock.mock.calls[0]?.[0].submissionAttemptId;
+  const secondAttemptId =
+    submitApplicationMock.mock.calls[1]?.[0].submissionAttemptId;
+  expect(firstAttemptId).toMatch(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+  );
+  expect(secondAttemptId).toBe(firstAttemptId);
+});
+
+it("parses a safe Edge HTTP error body and rejects transport or malformed bodies", async () => {
+  // Production break: treating every invocation failure as a network error discards authoritative rule reasons.
+  const evaluation = serverHardFailEvaluation();
+  const parsed = await parseApplicationSubmissionHttpError(
+    new FunctionsHttpError(
+      new Response(
+        JSON.stringify({
+          error: "The application does not satisfy this opportunity's rules.",
+          evaluation,
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+
+  expect(parsed).toBeInstanceOf(ApplicationSubmissionError);
+  expect(parsed?.message).toBe(
+    "The application does not satisfy this opportunity's rules.",
+  );
+  expect(parsed?.evaluation).toEqual(evaluation);
+  const validationError = await parseApplicationSubmissionHttpError(
+    new FunctionsHttpError(
+      new Response(
+        JSON.stringify({
+          error: "Applicants must be at least 19 years old.",
+        }),
+        { status: 422, headers: { "Content-Type": "application/json" } },
+      ),
+    ),
+  );
+  expect(validationError?.message).toBe(
+    "Applicants must be at least 19 years old.",
+  );
+  expect(validationError?.evaluation).toBeUndefined();
+  expect(
+    await parseApplicationSubmissionHttpError(new Error("Network unavailable")),
+  ).toBeNull();
+  expect(
+    await parseApplicationSubmissionHttpError(
+      new FunctionsHttpError(
+        new Response(
+          JSON.stringify({
+            error: "Unsafe malformed response",
+            evaluation: { eligible: false },
+          }),
+          { status: 422, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    ),
+  ).toBeNull();
+});
+
+it("renders authoritative server hard-fail reasons and hides later collection", async () => {
+  // Production break: presenting a server rule rejection as retry-only keeps sensitive collection visible.
+  const user = userEvent.setup();
+  submitApplicationMock.mockRejectedValue(
+    new ApplicationSubmissionError(
+      "The application does not satisfy this opportunity's rules.",
+      serverHardFailEvaluation(),
+    ),
+  );
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+  await reachApplicationForm(user);
+  await completeContactFields(user);
+  await user.click(screen.getByLabelText("Consent to this application"));
+  await user.click(screen.getByRole("button", { name: "Submit application" }));
+
+  expect(
+    await screen.findByText("This schedule is unavailable."),
+  ).toBeVisible();
+  expect(screen.queryByLabelText("Requested photo")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Display name")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Could not submit the application. Try again."),
+  ).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
+  await user.click(
+    screen.getByRole("button", { name: "Continue to application" }),
+  );
+  expect(screen.getByLabelText("Display name")).toHaveValue("Applicant");
+});
+
+it("shows a safe server validation message without an evaluation", async () => {
+  // Production break: replacing a safe age validation with a generic network message prevents correction.
+  const user = userEvent.setup();
+  submitApplicationMock.mockRejectedValue(
+    new ApplicationSubmissionError("Applicants must be at least 19 years old."),
+  );
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+  await reachApplicationForm(user);
+  await completeContactFields(user);
+  await user.click(screen.getByLabelText("Consent to this application"));
+  await user.click(screen.getByRole("button", { name: "Submit application" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Applicants must be at least 19 years old.",
+  );
+  expect(screen.getByLabelText("Display name")).toHaveValue("Applicant");
 });
 
 it("disables a pending submission and prevents a double submit", async () => {
@@ -265,6 +384,87 @@ it("exposes the direct applicant route and keeps the recruiter drafting route us
   expect(screen.getByRole("heading", { name: "Model Pass" })).toBeVisible();
 });
 
+it("hides the old opportunity during a same-component route transition", async () => {
+  // Production break: retaining state by component type briefly exposes the prior job and its form under a new URL.
+  const secondOpportunity = {
+    ...makeupOpportunity,
+    id: "00000000-0000-4000-8000-000000000002",
+    title: "Second makeup certification exam",
+  };
+  let resolveSecond: ((opportunity: PublicOpportunity) => void) | undefined;
+  getPublicOpportunityMock.mockImplementation((requestedId: string) => {
+    if (requestedId === opportunityId) {
+      return Promise.resolve(makeupOpportunity);
+    }
+    return new Promise<PublicOpportunity>((resolve) => {
+      resolveSecond = resolve;
+    });
+  });
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/opportunities/:opportunityId/apply",
+        element: <ApplyPage />,
+      },
+    ],
+    { initialEntries: [`/opportunities/${opportunityId}/apply`] },
+  );
+  render(<RouterProvider router={router} />);
+  expect(
+    await screen.findByRole("heading", {
+      name: "Makeup certification practical exam",
+    }),
+  ).toBeVisible();
+
+  await act(async () => {
+    await router.navigate(`/opportunities/${secondOpportunity.id}/apply`);
+  });
+
+  expect(
+    screen.queryByRole("heading", {
+      name: "Makeup certification practical exam",
+    }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText("Check eligibility")).not.toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("Loading opportunity");
+
+  await act(async () => {
+    resolveSecond?.(secondOpportunity);
+  });
+  expect(
+    await screen.findByRole("heading", {
+      name: "Second makeup certification exam",
+    }),
+  ).toBeVisible();
+});
+
+it("rejects a loader response whose opportunity ID does not match the route", async () => {
+  // Production break: trusting a mismatched loader row renders another job under the requested job URL.
+  getPublicOpportunityMock.mockResolvedValue({
+    ...makeupOpportunity,
+    id: "00000000-0000-4000-8000-000000000099",
+  });
+  const router = createMemoryRouter(
+    [
+      {
+        path: "/opportunities/:opportunityId/apply",
+        element: <ApplyPage />,
+      },
+    ],
+    { initialEntries: [`/opportunities/${opportunityId}/apply`] },
+  );
+  render(<RouterProvider router={router} />);
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "This opportunity is unavailable.",
+  );
+  expect(
+    screen.queryByRole("heading", {
+      name: "Makeup certification practical exam",
+    }),
+  ).not.toBeInTheDocument();
+});
+
 async function answerBooleanQuestion(
   user: ReturnType<typeof userEvent.setup>,
   question: string,
@@ -322,5 +522,23 @@ function successfulSubmission() {
       reviews: [],
       reminders: [],
     },
+  };
+}
+
+function serverHardFailEvaluation() {
+  return {
+    rulesetId: "makeup-certification",
+    rulesetVersion: 1,
+    eligible: false,
+    failures: [
+      {
+        ruleId: "schedule-available",
+        reason: "This schedule is unavailable.",
+        effect: "hard_fail" as const,
+        input: false,
+      },
+    ],
+    reviews: [],
+    reminders: [],
   };
 }

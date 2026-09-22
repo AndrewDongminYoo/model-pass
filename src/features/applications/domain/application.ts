@@ -6,6 +6,7 @@ import type {
 
 export interface SubmitApplicationInput {
   opportunityId: string;
+  submissionAttemptId: string;
   applicant: {
     displayName: string;
     phone: string;
@@ -28,13 +29,34 @@ const answerValueSchema = z.union([
   z.null(),
 ]);
 
+const ruleOutcomeSchema = z
+  .object({
+    ruleId: z.string().min(1),
+    reason: z.string().min(1),
+    effect: z.enum(["hard_fail", "needs_review", "reminder"]),
+    input: answerValueSchema,
+  })
+  .strip();
+
+const evaluationResultSchema = z
+  .object({
+    rulesetId: z.string().min(1),
+    rulesetVersion: z.number().int().positive(),
+    eligible: z.boolean(),
+    failures: z.array(ruleOutcomeSchema),
+    reviews: z.array(ruleOutcomeSchema),
+    reminders: z.array(ruleOutcomeSchema),
+  })
+  .strip();
+
 export const submitApplicationInputSchema = z
   .object({
     opportunityId: z
       .string()
-      .regex(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      ),
+      .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
+    submissionAttemptId: z
+      .string()
+      .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i),
     applicant: z
       .object({
         displayName: z.string().trim().min(1).max(100),
@@ -54,4 +76,8 @@ export function parseSubmitApplicationInput(
   input: unknown,
 ): SubmitApplicationInput {
   return submitApplicationInputSchema.parse(input);
+}
+
+export function isEvaluationResult(input: unknown): input is EvaluationResult {
+  return evaluationResultSchema.safeParse(input).success;
 }

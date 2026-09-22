@@ -23,6 +23,8 @@ create table public.opportunities (
 create table public.applications (
   id uuid primary key default gen_random_uuid(),
   opportunity_id uuid not null references public.opportunities(id) on delete restrict,
+  submission_attempt_id uuid not null,
+  submission_fingerprint text not null check (submission_fingerprint ~ '^[0-9a-f]{64}$'),
   applicant_display_name text not null,
   applicant_phone text not null,
   applicant_birth_date date not null,
@@ -30,7 +32,8 @@ create table public.applications (
   ruleset_version integer not null check (ruleset_version > 0),
   rules_snapshot jsonb not null check (jsonb_typeof(rules_snapshot) = 'array'),
   evaluation_snapshot jsonb not null check (jsonb_typeof(evaluation_snapshot) = 'object'),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  unique (opportunity_id, submission_attempt_id)
 );
 
 create index applications_opportunity_id_idx
@@ -85,6 +88,8 @@ alter table public.consent_events enable row level security;
 
 create or replace function public.submit_application_transaction(
   p_opportunity_id uuid,
+  p_submission_attempt_id uuid,
+  p_submission_fingerprint text,
   p_applicant_display_name text,
   p_applicant_phone text,
   p_applicant_birth_date date,
@@ -103,8 +108,33 @@ set search_path = public, pg_catalog
 as $$
 declare
   target_opportunity public.opportunities%rowtype;
+  existing_application_id uuid;
+  existing_submission_fingerprint text;
   new_application_id uuid;
 begin
+  perform pg_advisory_xact_lock(
+    hashtextextended(
+      p_opportunity_id::text || ':' || p_submission_attempt_id::text,
+      0
+    )
+  );
+
+  select id, submission_fingerprint
+  into existing_application_id, existing_submission_fingerprint
+  from public.applications
+  where opportunity_id = p_opportunity_id
+    and submission_attempt_id = p_submission_attempt_id;
+
+  if found then
+    if existing_submission_fingerprint is distinct from p_submission_fingerprint then
+      raise exception using
+        errcode = '22023',
+        message = 'Submission attempt payload does not match the original application.';
+    end if;
+
+    return existing_application_id;
+  end if;
+
   if p_current_application_consent is not true then
     raise exception using
       errcode = '22023',
@@ -189,6 +219,8 @@ begin
 
   insert into public.applications (
     opportunity_id,
+    submission_attempt_id,
+    submission_fingerprint,
     applicant_display_name,
     applicant_phone,
     applicant_birth_date,
@@ -199,6 +231,8 @@ begin
   )
   values (
     target_opportunity.id,
+    p_submission_attempt_id,
+    p_submission_fingerprint,
     p_applicant_display_name,
     p_applicant_phone,
     p_applicant_birth_date,
@@ -224,6 +258,8 @@ $$;
 
 revoke all on function public.submit_application_transaction(
   uuid,
+  uuid,
+  text,
   text,
   text,
   date,
@@ -238,6 +274,8 @@ revoke all on function public.submit_application_transaction(
 
 grant execute on function public.submit_application_transaction(
   uuid,
+  uuid,
+  text,
   text,
   text,
   date,

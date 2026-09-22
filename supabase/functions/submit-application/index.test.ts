@@ -1,6 +1,7 @@
 import type { RuleDefinition } from "../../../src/features/eligibility/domain/types.ts";
 import {
   SubmissionError,
+  createSubmissionFingerprint,
   createSubmitApplicationHandler,
   submitApplication,
   type ApplicationPersistenceCommand,
@@ -12,12 +13,14 @@ import { isSubmitApplicationResult } from "../../../src/features/applications/ap
 type TestFunction = () => void | Promise<void>;
 type TestRegistrar = (name: string, testFunction: TestFunction) => void;
 
-const registerTest: TestRegistrar = "Deno" in globalThis
-  ? Deno.test
-  : (globalThis as typeof globalThis & { it: TestRegistrar }).it;
+const registerTest: TestRegistrar =
+  "Deno" in globalThis
+    ? Deno.test
+    : (globalThis as typeof globalThis & { it: TestRegistrar }).it;
 
 const now = new Date("2026-09-22T03:00:00.000Z");
 const applicationId = "00000000-0000-0000-0000-000000000101";
+const submissionAttemptId = "00000000-0000-4000-8000-000000000201";
 
 const rules: RuleDefinition[] = [
   {
@@ -52,6 +55,7 @@ function createOpportunity(): OpportunityForSubmission {
 function createInput(overrides: Record<string, unknown> = {}) {
   return {
     opportunityId: "00000000-0000-0000-0000-000000000001",
+    submissionAttemptId,
     applicant: {
       displayName: "Applicant",
       phone: "010-1234-5678",
@@ -101,28 +105,31 @@ registerTest("allows Supabase browser preflight headers", async () => {
   );
 });
 
-registerTest("uses the Seoul business date for the age-19 boundary", async () => {
-  // Production break: using the UTC date rejects an applicant after their birthday starts in Seoul.
-  const seoulBirthdayBoundary = new Date("2026-09-22T15:30:00.000Z");
-  const { dependencies, persisted } = createDependencies(
-    createOpportunity(),
-    seoulBirthdayBoundary,
-  );
+registerTest(
+  "uses the Seoul business date for the age-19 boundary",
+  async () => {
+    // Production break: using the UTC date rejects an applicant after their birthday starts in Seoul.
+    const seoulBirthdayBoundary = new Date("2026-09-22T15:30:00.000Z");
+    const { dependencies, persisted } = createDependencies(
+      createOpportunity(),
+      seoulBirthdayBoundary,
+    );
 
-  const result = await submitApplication(
-    createInput({
-      applicant: {
-        displayName: "Applicant",
-        phone: "010-1234-5678",
-        birthDate: "2007-09-23",
-      },
-    }),
-    dependencies,
-  );
+    const result = await submitApplication(
+      createInput({
+        applicant: {
+          displayName: "Applicant",
+          phone: "010-1234-5678",
+          birthDate: "2007-09-23",
+        },
+      }),
+      dependencies,
+    );
 
-  assertEquals(result.applicationId, applicationId);
-  assertEquals(persisted.length, 1);
-});
+    assertEquals(result.applicationId, applicationId);
+    assertEquals(persisted.length, 1);
+  },
+);
 
 registerTest("rejects an applicant who has not reached age 19", async () => {
   // Production break: trusting an applicant's adult answer instead of deriving age from the birth date.
@@ -148,47 +155,53 @@ registerTest("rejects an applicant who has not reached age 19", async () => {
   assertEquals(persisted.length, 0);
 });
 
-registerTest("ignores a client eligibility claim when a server-evaluated hard rule fails", async () => {
-  // Production break: persisting a client-supplied eligible flag without evaluating the stored rules.
-  const { dependencies, persisted } = createDependencies();
+registerTest(
+  "ignores a client eligibility claim when a server-evaluated hard rule fails",
+  async () => {
+    // Production break: persisting a client-supplied eligible flag without evaluating the stored rules.
+    const { dependencies, persisted } = createDependencies();
 
-  const error = await expectSubmissionError(
-    () =>
-      submitApplication(
-        createInput({
-          answers: { isAvailable: false },
-          eligible: true,
-          evaluation: { eligible: true },
-        }),
-        dependencies,
-      ),
-    "The application does not satisfy this opportunity's rules.",
-  );
+    const error = await expectSubmissionError(
+      () =>
+        submitApplication(
+          createInput({
+            answers: { isAvailable: false },
+            eligible: true,
+            evaluation: { eligible: true },
+          }),
+          dependencies,
+        ),
+      "The application does not satisfy this opportunity's rules.",
+    );
 
-  assertEquals(error.status, 422);
-  assertEquals(error.evaluation?.eligible, false);
-  assertEquals(error.evaluation?.failures[0]?.ruleId, "schedule-available");
-  assertEquals(persisted.length, 0);
-});
+    assertEquals(error.status, 422);
+    assertEquals(error.evaluation?.eligible, false);
+    assertEquals(error.evaluation?.failures[0]?.ruleId, "schedule-available");
+    assertEquals(persisted.length, 0);
+  },
+);
 
-registerTest("rejects answer fields that the stored rules do not request", async () => {
-  // Production break: persisting unrelated client data that has no stored eligibility rule.
-  const { dependencies, persisted } = createDependencies();
+registerTest(
+  "rejects answer fields that the stored rules do not request",
+  async () => {
+    // Production break: persisting unrelated client data that has no stored eligibility rule.
+    const { dependencies, persisted } = createDependencies();
 
-  const error = await expectSubmissionError(
-    () =>
-      submitApplication(
-        createInput({
-          answers: { isAvailable: true, unrelatedProfile: "extra" },
-        }),
-        dependencies,
-      ),
-    "Answers contain fields not requested by this opportunity.",
-  );
+    const error = await expectSubmissionError(
+      () =>
+        submitApplication(
+          createInput({
+            answers: { isAvailable: true, unrelatedProfile: "extra" },
+          }),
+          dependencies,
+        ),
+      "Answers contain fields not requested by this opportunity.",
+    );
 
-  assertEquals(error.status, 400);
-  assertEquals(persisted.length, 0);
-});
+    assertEquals(error.status, 400);
+    assertEquals(persisted.length, 0);
+  },
+);
 
 registerTest("rejects a client-supplied isAdult answer", async () => {
   // Production break: allowing the client to supply the server-derived adult eligibility input.
@@ -223,7 +236,7 @@ registerTest("rejects an oversized applicant display name", async () => {
         },
       }),
       dependencies,
-    )
+    ),
   );
 
   assertEquals(persisted.length, 0);
@@ -239,7 +252,7 @@ registerTest("rejects an oversized answer string", async () => {
         answers: { isAvailable: "A".repeat(1_001) },
       }),
       dependencies,
-    )
+    ),
   );
 
   assertEquals(persisted.length, 0);
@@ -282,6 +295,12 @@ registerTest("persists immutable rules and evaluation snapshots", async () => {
   assertEquals(persisted.length, 1);
   assertEquals(persisted[0]?.currentApplicationConsent, true);
   assertEquals(persisted[0]?.futureOpportunityConsent, false);
+  assertEquals(persisted[0]?.submissionAttemptId, submissionAttemptId);
+  assertMatches(
+    persisted[0]?.submissionFingerprint,
+    /^[0-9a-f]{64}$/,
+    "submission fingerprint",
+  );
 
   opportunity.rules[1] = {
     ...opportunity.rules[1],
@@ -304,26 +323,85 @@ registerTest("persists immutable rules and evaluation snapshots", async () => {
   });
 });
 
-registerTest("rejects an application after the opportunity closes", async () => {
-  // Production break: accepting new personal data after the published close time.
-  const opportunity = createOpportunity();
-  opportunity.closesAt = "2026-09-22T02:59:59.000Z";
-  const { dependencies, persisted } = createDependencies(opportunity);
+registerTest(
+  "reuses the attempt ID and canonical fingerprint across an exact retry",
+  async () => {
+    // Production break: regenerating an idempotency key or fingerprint turns response-loss retry into a duplicate write.
+    const { dependencies, persisted } = createDependencies();
 
-  const error = await expectSubmissionError(
-    () => submitApplication(createInput(), dependencies),
-    "This opportunity is closed.",
-  );
+    await submitApplication(createInput(), dependencies);
+    await submitApplication(createInput(), dependencies);
+    await submitApplication(
+      createInput({ futureOpportunityConsent: true }),
+      dependencies,
+    );
 
-  assertEquals(error.status, 409);
-  assertEquals(persisted.length, 0);
-});
+    assertEquals(persisted.length, 3);
+    assertEquals(persisted[0]?.submissionAttemptId, submissionAttemptId);
+    assertEquals(persisted[1]?.submissionAttemptId, submissionAttemptId);
+    assertEquals(
+      persisted[1]?.submissionFingerprint,
+      persisted[0]?.submissionFingerprint,
+    );
+    const firstCommand = persisted[0];
+    if (firstCommand === undefined) {
+      throw new Error("Expected the first persistence command.");
+    }
+    const reorderedFingerprint = await createSubmissionFingerprint({
+      opportunityId: firstCommand.opportunityId,
+      submissionAttemptId: firstCommand.submissionAttemptId,
+      applicant: firstCommand.applicant,
+      answers: { isAdult: true, isAvailable: true },
+      currentApplicationConsent: firstCommand.currentApplicationConsent,
+      futureOpportunityConsent: firstCommand.futureOpportunityConsent,
+      rulesetId: firstCommand.rulesetId,
+      rulesetVersion: firstCommand.rulesetVersion,
+      rulesSnapshot: firstCommand.rulesSnapshot,
+      evaluationSnapshot: firstCommand.evaluationSnapshot,
+    });
+    assertEquals(reorderedFingerprint, firstCommand.submissionFingerprint);
+    if (
+      persisted[2]?.submissionFingerprint ===
+      persisted[0]?.submissionFingerprint
+    ) {
+      throw new Error(
+        "Expected a changed authoritative payload to change the fingerprint.",
+      );
+    }
+  },
+);
+
+registerTest(
+  "rejects an application after the opportunity closes",
+  async () => {
+    // Production break: accepting new personal data after the published close time.
+    const opportunity = createOpportunity();
+    opportunity.closesAt = "2026-09-22T02:59:59.000Z";
+    const { dependencies, persisted } = createDependencies(opportunity);
+
+    const error = await expectSubmissionError(
+      () => submitApplication(createInput(), dependencies),
+      "This opportunity is closed.",
+    );
+
+    assertEquals(error.status, 409);
+    assertEquals(persisted.length, 0);
+  },
+);
 
 function assertEquals(actual: unknown, expected: unknown): void {
   const actualJson = JSON.stringify(actual);
   const expectedJson = JSON.stringify(expected);
   if (actualJson !== expectedJson) {
     throw new Error(`Expected ${expectedJson}, received ${actualJson}.`);
+  }
+}
+
+function assertMatches(value: unknown, pattern: RegExp, label: string): void {
+  if (typeof value !== "string" || !pattern.test(value)) {
+    throw new Error(
+      `Expected ${label} to match ${pattern}, received ${String(value)}.`,
+    );
   }
 }
 

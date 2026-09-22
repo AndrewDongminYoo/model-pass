@@ -8,8 +8,11 @@ import { ApplicationForm } from "../components/ApplicationForm";
 
 export function ApplyPage() {
   const { opportunityId } = useParams<{ opportunityId: string }>();
-  const [opportunity, setOpportunity] = useState<PublicOpportunity>();
-  const [error, setError] = useState<string>();
+  const [loaded, setLoaded] = useState<{
+    opportunityId: string;
+    opportunity?: PublicOpportunity;
+    error?: string;
+  }>();
 
   useEffect(() => {
     let active = true;
@@ -20,12 +23,22 @@ export function ApplyPage() {
     void getPublicOpportunity(opportunityId)
       .then((result) => {
         if (active) {
-          setOpportunity(result);
+          setLoaded(
+            result.id === opportunityId
+              ? { opportunityId, opportunity: result }
+              : {
+                  opportunityId,
+                  error: "This opportunity is unavailable.",
+                },
+          );
         }
       })
       .catch(() => {
         if (active) {
-          setError("This opportunity is unavailable.");
+          setLoaded({
+            opportunityId,
+            error: "This opportunity is unavailable.",
+          });
         }
       });
 
@@ -37,12 +50,16 @@ export function ApplyPage() {
   if (opportunityId === undefined) {
     return <p role="alert">This opportunity is unavailable.</p>;
   }
-  if (error !== undefined) {
-    return <p role="alert">{error}</p>;
+  if (loaded?.opportunityId === opportunityId && loaded.error !== undefined) {
+    return <p role="alert">{loaded.error}</p>;
   }
-  if (opportunity === undefined) {
+  if (
+    loaded?.opportunityId !== opportunityId ||
+    loaded.opportunity === undefined
+  ) {
     return <p role="status">Loading opportunity</p>;
   }
+  const opportunity = loaded.opportunity;
 
   return (
     <main>
@@ -59,7 +76,7 @@ export function ApplyPage() {
         <dt>Applications close</dt>
         <dd>{new Date(opportunity.closesAt).toLocaleString()}</dd>
       </dl>
-      <ApplicationForm opportunity={opportunity} />
+      <ApplicationForm key={opportunity.id} opportunity={opportunity} />
     </main>
   );
 }

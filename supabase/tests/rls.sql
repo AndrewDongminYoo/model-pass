@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(28);
+select plan(33);
 
 insert into auth.users (id, aud, role, email, encrypted_password)
 values
@@ -89,6 +89,8 @@ values
 insert into public.applications (
   id,
   opportunity_id,
+  submission_attempt_id,
+  submission_fingerprint,
   applicant_display_name,
   applicant_phone,
   applicant_birth_date,
@@ -101,6 +103,8 @@ values
   (
     '00000000-0000-0000-0000-000000000011',
     '00000000-0000-0000-0000-000000000001',
+    '00000000-0000-4000-8000-000000000011',
+    repeat('a', 64),
     'Owned applicant',
     '010-0000-0001',
     '2000-01-01',
@@ -112,6 +116,8 @@ values
   (
     '00000000-0000-0000-0000-000000000012',
     '00000000-0000-0000-0000-000000000002',
+    '00000000-0000-4000-8000-000000000012',
+    repeat('b', 64),
     'Other applicant',
     '010-0000-0002',
     '2000-01-01',
@@ -213,6 +219,8 @@ create temporary table submitted_application_ids (id uuid not null);
 insert into submitted_application_ids (id)
 select public.submit_application_transaction(
   '00000000-0000-0000-0000-000000000003',
+  '00000000-0000-4000-8000-000000000030',
+  repeat('c', 64),
   'Snapshot applicant',
   '010-0000-0003',
   '2000-01-01',
@@ -223,6 +231,81 @@ select public.submit_application_transaction(
   1,
   '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]',
   '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+);
+
+select is(
+  public.submit_application_transaction(
+    '00000000-0000-0000-0000-000000000003',
+    '00000000-0000-4000-8000-000000000030',
+    repeat('c', 64),
+    'Snapshot applicant',
+    '010-0000-0003',
+    '2000-01-01',
+    '{"isAdult":true,"isAvailable":true}',
+    true,
+    false,
+    'hair-promotion',
+    1,
+    '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]',
+    '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+  ),
+  (select id from submitted_application_ids),
+  'an exact retry returns the original application ID'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.applications
+    join submitted_application_ids on submitted_application_ids.id = applications.id
+  ),
+  1::bigint,
+  'an exact retry leaves one application'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.application_answers
+    join submitted_application_ids
+      on submitted_application_ids.id = application_answers.application_id
+  ),
+  2::bigint,
+  'an exact retry leaves one answer set'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.consent_events
+    join submitted_application_ids
+      on submitted_application_ids.id = consent_events.application_id
+  ),
+  2::bigint,
+  'an exact retry leaves one consent set'
+);
+
+select throws_ok(
+  $$
+    select public.submit_application_transaction(
+      '00000000-0000-0000-0000-000000000003',
+      '00000000-0000-4000-8000-000000000030',
+      repeat('d', 64),
+      'Changed applicant',
+      '010-9999-9999',
+      '2000-01-01',
+      '{"isAdult":true,"isAvailable":true}',
+      true,
+      false,
+      'hair-promotion',
+      1,
+      '[{"id":"schedule-available","field":"isAvailable","operator":"equals","expected":true,"effect":"hard_fail","reason":"This schedule is unavailable."}]',
+      '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+    )
+  $$,
+  '22023',
+  'Submission attempt payload does not match the original application.',
+  'a changed payload cannot reuse a submission attempt ID'
 );
 
 update public.opportunities
@@ -294,6 +377,8 @@ select throws_ok(
   $$
     select public.submit_application_transaction(
       '00000000-0000-0000-0000-000000000003',
+      '00000000-0000-4000-8000-000000000031',
+      repeat('e', 64),
       'Null consent applicant',
       '010-0000-0004',
       '2000-01-01',
@@ -315,6 +400,8 @@ select throws_ok(
   $$
     select public.submit_application_transaction(
       '00000000-0000-0000-0000-000000000003',
+      '00000000-0000-4000-8000-000000000032',
+      repeat('f', 64),
       'Incomplete evaluation applicant',
       '010-0000-0005',
       '2000-01-01',
@@ -336,6 +423,8 @@ select throws_ok(
   $$
     select public.submit_application_transaction(
       '00000000-0000-0000-0000-000000000003',
+      '00000000-0000-4000-8000-000000000033',
+      repeat('1', 64),
       'Stale rules applicant',
       '010-0000-0006',
       '2000-01-01',
@@ -361,6 +450,8 @@ select throws_ok(
   $$
     select public.submit_application_transaction(
       '00000000-0000-0000-0000-000000000003',
+      '00000000-0000-4000-8000-000000000034',
+      repeat('2', 64),
       'Closed opportunity applicant',
       '010-0000-0007',
       '2000-01-01',
@@ -386,6 +477,8 @@ select throws_ok(
   $$
     select public.submit_application_transaction(
       '00000000-0000-0000-0000-000000000002',
+      '00000000-0000-4000-8000-000000000035',
+      repeat('3', 64),
       'Draft opportunity applicant',
       '010-0000-0008',
       '2000-01-01',
@@ -406,7 +499,7 @@ select throws_ok(
 select ok(
   not has_function_privilege(
     'anon',
-    'public.submit_application_transaction(uuid,text,text,date,jsonb,boolean,boolean,text,integer,jsonb,jsonb)',
+    'public.submit_application_transaction(uuid,uuid,text,text,text,date,jsonb,boolean,boolean,text,integer,jsonb,jsonb)',
     'EXECUTE'
   ),
   'anonymous role cannot execute the submission transaction'
@@ -415,7 +508,7 @@ select ok(
 select ok(
   not has_function_privilege(
     'authenticated',
-    'public.submit_application_transaction(uuid,text,text,date,jsonb,boolean,boolean,text,integer,jsonb,jsonb)',
+    'public.submit_application_transaction(uuid,uuid,text,text,text,date,jsonb,boolean,boolean,text,integer,jsonb,jsonb)',
     'EXECUTE'
   ),
   'authenticated role cannot execute the submission transaction'
@@ -476,6 +569,8 @@ select throws_ok(
   $$
     insert into public.applications (
       opportunity_id,
+      submission_attempt_id,
+      submission_fingerprint,
       applicant_display_name,
       applicant_phone,
       applicant_birth_date,
@@ -486,6 +581,8 @@ select throws_ok(
     )
     values (
       '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-4000-8000-000000000041',
+      repeat('4', 64),
       'Direct write applicant',
       '010-1111-1111',
       '2000-01-01',
@@ -570,6 +667,8 @@ select throws_ok(
   $$
     insert into public.applications (
       opportunity_id,
+      submission_attempt_id,
+      submission_fingerprint,
       applicant_display_name,
       applicant_phone,
       applicant_birth_date,
@@ -580,6 +679,8 @@ select throws_ok(
     )
     values (
       '00000000-0000-0000-0000-000000000001',
+      '00000000-0000-4000-8000-000000000042',
+      repeat('5', 64),
       'Anonymous applicant',
       '010-9999-9999',
       '2000-01-01',

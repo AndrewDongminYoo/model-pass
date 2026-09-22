@@ -1,8 +1,21 @@
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../../../lib/supabase/client";
+import type { EvaluationResult } from "../../eligibility/domain/types";
 import type {
   SubmitApplicationInput,
   SubmitApplicationResult,
 } from "../domain/application";
+import { isEvaluationResult } from "../domain/application";
+
+export class ApplicationSubmissionError extends Error {
+  constructor(
+    message: string,
+    readonly evaluation?: EvaluationResult,
+  ) {
+    super(message);
+    this.name = "ApplicationSubmissionError";
+  }
+}
 
 export async function submitApplication(
   input: SubmitApplicationInput,
@@ -13,6 +26,10 @@ export async function submitApplication(
   );
 
   if (error !== null) {
+    const submissionError = await parseApplicationSubmissionHttpError(error);
+    if (submissionError !== null) {
+      throw submissionError;
+    }
     throw error;
   }
   if (!isSubmitApplicationResult(data)) {
@@ -20,6 +37,46 @@ export async function submitApplication(
   }
 
   return data;
+}
+
+export async function parseApplicationSubmissionHttpError(
+  error: unknown,
+): Promise<ApplicationSubmissionError | null> {
+  if (
+    !(error instanceof FunctionsHttpError) ||
+    !(error.context instanceof Response)
+  ) {
+    return null;
+  }
+
+  try {
+    const body: unknown = await error.context.json();
+    if (typeof body !== "object" || body === null) {
+      return null;
+    }
+
+    const response = body as { error?: unknown; evaluation?: unknown };
+    if (
+      typeof response.error !== "string" ||
+      response.error.length === 0 ||
+      response.error.length > 500
+    ) {
+      return null;
+    }
+    if (
+      response.evaluation !== undefined &&
+      !isEvaluationResult(response.evaluation)
+    ) {
+      return null;
+    }
+
+    return new ApplicationSubmissionError(
+      response.error,
+      response.evaluation as EvaluationResult | undefined,
+    );
+  } catch {
+    return null;
+  }
 }
 
 export function isSubmitApplicationResult(
@@ -30,18 +87,8 @@ export function isSubmitApplicationResult(
   }
 
   const result = value as Partial<SubmitApplicationResult>;
-  const evaluation = result.evaluation;
   return (
     typeof result.applicationId === "string" &&
-    typeof evaluation === "object" &&
-    evaluation !== null &&
-    typeof evaluation.rulesetId === "string" &&
-    evaluation.rulesetId.length > 0 &&
-    Number.isInteger(evaluation.rulesetVersion) &&
-    evaluation.rulesetVersion > 0 &&
-    typeof evaluation.eligible === "boolean" &&
-    Array.isArray(evaluation.failures) &&
-    Array.isArray(evaluation.reviews) &&
-    Array.isArray(evaluation.reminders)
+    isEvaluationResult(result.evaluation)
   );
 }

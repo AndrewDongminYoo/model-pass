@@ -165,11 +165,11 @@ The review must address the distinction between job placement and job-informatio
 
 Primary references checked on 2026-09-22:
 
-- Korean Employment Security Act definitions and reporting provisions: https://www.law.go.kr/lsInfoP.do?lsId=001765
-- Administrative distinction between job placement and job-information provision: https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000169910
-- Paid job-placement registration provision: https://law.go.kr/LSW/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1024682487
-- Danggeun Jobs terms: https://www.daangn.com/policy/jobs_terms
-- Danggeun trust and safety guidance: https://jobs-trust.daangn.com/
+- Korean Employment Security Act definitions and reporting provisions: <https://www.law.go.kr/lsInfoP.do?lsId=001765>
+- Administrative distinction between job placement and job-information provision: <https://www.law.go.kr/LSW/admRulLsInfoP.do?admRulSeq=2100000169910>
+- Paid job-placement registration provision: <https://law.go.kr/LSW/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1024682487>
+- Danggeun Jobs terms: <https://www.daangn.com/policy/jobs_terms>
+- Danggeun trust and safety guidance: <https://jobs-trust.daangn.com/>
 
 An external application link must not be assumed to comply with Danggeun policy until a current written response or directly applicable policy text confirms the intended flow.
 The product must still function when the recruiter copies applicant answers manually.
@@ -179,9 +179,9 @@ Its current official documentation supports WebView applications and states that
 
 Apps in Toss references checked on 2026-09-22:
 
-- Platform overview: https://developers-apps-in-toss.toss.im/intro/overview.html
-- Existing web project integration: https://developers-apps-in-toss.toss.im/ai-vibe-coding/tutorials/webview.md
-- Documentation index: https://developers-apps-in-toss.toss.im/llms.txt
+- Platform overview: <https://developers-apps-in-toss.toss.im/intro/overview.html>
+- Existing web project integration: <https://developers-apps-in-toss.toss.im/ai-vibe-coding/tutorials/webview.md>
+- Documentation index: <https://developers-apps-in-toss.toss.im/llms.txt>
 
 ## Pilot Success Criteria
 

@@ -453,9 +453,7 @@ export function createSupabaseDependencies(
 function parseSubmissionState(
   value: unknown,
 ): ApplicationSubmissionState | undefined {
-  return value === "pending_photo" || value === "submitted"
-    ? value
-    : undefined;
+  return value === "pending_photo" || value === "submitted" ? value : undefined;
 }
 
 export function createSubmitApplicationHandler(

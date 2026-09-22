@@ -334,10 +334,7 @@ export function createPhotoUploadHandler(
             return jsonResponse(result, 201);
           } catch (retryError) {
             if (retryError instanceof PhotoFinalizationRejectedError) {
-              await compensateUploadFailure(
-                dependencies,
-                claims.storagePath,
-              );
+              await compensateUploadFailure(dependencies, claims.storagePath);
               throw retryError;
             }
             dependencies.reportError(
@@ -532,10 +529,7 @@ function assertUploadWindowOpen(
   }
 }
 
-function isUploadWindowOpen(
-  application: PhotoApplication,
-  now: Date,
-): boolean {
+function isUploadWindowOpen(application: PhotoApplication, now: Date): boolean {
   return (
     application.status === "published" &&
     application.closedAt === null &&
@@ -827,9 +821,8 @@ export function createSupabaseDependencies(
         },
       );
       if (error !== null) {
-        const errorCode = typeof error.code === "string"
-          ? error.code.trim()
-          : "";
+        const errorCode =
+          typeof error.code === "string" ? error.code.trim() : "";
         if (status >= 400 && status < 500 && errorCode.length > 0) {
           throw new PhotoFinalizationRejectedError(
             `Failed to finalize photo upload: ${error.message}`,

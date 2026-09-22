@@ -145,8 +145,7 @@ registerTest(
         await checkStatus(
           createPhotoUploadHandler(pending.dependencies, functionUrl),
           {
-            applicationId:
-              "00000000-0000-4000-8000-000000000999",
+            applicationId: "00000000-0000-4000-8000-000000000999",
           },
         ),
       ),
@@ -549,7 +548,7 @@ registerTest(
       byteSize: 3,
       expiresAt: "2026-10-30T03:00:00.000Z",
     });
-    assertEquals((await readJson(response)), {
+    assertEquals(await readJson(response), {
       applicationId,
       photoId,
       submissionState: "submitted",
@@ -653,12 +652,7 @@ registerTest(
 
     assertEquals(response.status, 500);
     assertEquals(fixture.reservations, [expectedPath()]);
-    assertEquals(fixture.events, [
-      "reserve",
-      "storage",
-      "finalize",
-      "remove",
-    ]);
+    assertEquals(fixture.events, ["reserve", "storage", "finalize", "remove"]);
   },
 );
 

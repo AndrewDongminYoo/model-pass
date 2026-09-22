@@ -88,12 +88,12 @@ Configure Playwright to run Chromium against the Vite preview server.
 - [ ] **Step 3: Write the failing root render test**
 
 ```tsx
-import { render, screen } from '@testing-library/react';
-import { App } from './App';
+import { render, screen } from "@testing-library/react";
+import { App } from "./App";
 
-it('renders the working product name', () => {
+it("renders the working product name", () => {
   render(<App />);
-  expect(screen.getByRole('heading', { name: 'Model Pass' })).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Model Pass" })).toBeVisible();
 });
 ```
 
@@ -145,28 +145,35 @@ git commit -m "chore: scaffold standalone web app"
 ```ts
 const rules: RuleDefinition[] = [
   {
-    id: 'adult-only',
-    field: 'isAdult',
-    operator: 'equals',
+    id: "adult-only",
+    field: "isAdult",
+    operator: "equals",
     expected: true,
-    effect: 'hard_fail',
-    reason: 'This pilot is available to adults only.',
+    effect: "hard_fail",
+    reason: "This pilot is available to adults only.",
   },
   {
-    id: 'remove-lenses',
-    field: 'wearsLenses',
-    operator: 'equals',
+    id: "remove-lenses",
+    field: "wearsLenses",
+    operator: "equals",
     expected: false,
-    effect: 'reminder',
-    reason: 'Remove lenses before the appointment.',
+    effect: "reminder",
+    reason: "Remove lenses before the appointment.",
   },
 ];
 
 expect(evaluateRules({ isAdult: false, wearsLenses: true }, rules)).toEqual({
   eligible: false,
-  failures: [{ ruleId: 'adult-only', reason: 'This pilot is available to adults only.' }],
+  failures: [
+    { ruleId: "adult-only", reason: "This pilot is available to adults only." },
+  ],
   reviews: [],
-  reminders: [{ ruleId: 'remove-lenses', reason: 'Remove lenses before the appointment.' }],
+  reminders: [
+    {
+      ruleId: "remove-lenses",
+      reason: "Remove lenses before the appointment.",
+    },
+  ],
 });
 ```
 
@@ -182,7 +189,7 @@ Support only `equals`, `not_equals`, `one_of`, `none_of`, `minimum`, and `maximu
 Reject an unknown operator during ruleset parsing rather than silently treating it as a pass.
 
 ```ts
-export type RuleEffect = 'hard_fail' | 'needs_review' | 'reminder';
+export type RuleEffect = "hard_fail" | "needs_review" | "reminder";
 export type AnswerValue = string | number | boolean | null;
 
 export interface EvaluationResult {
@@ -230,12 +237,15 @@ git commit -m "feat: add deterministic eligibility rules"
 - [ ] **Step 1: Write tests for both category paths and explicit compensation**
 
 ```tsx
-it('requires a cash amount for a paid makeup opportunity', async () => {
+it("requires a cash amount for a paid makeup opportunity", async () => {
   render(<OpportunityForm onSubmit={onSubmit} />);
-  await user.selectOptions(screen.getByLabelText('Category'), 'makeup_certification');
-  await user.selectOptions(screen.getByLabelText('Benefit type'), 'cash');
-  await user.click(screen.getByRole('button', { name: 'Preview opportunity' }));
-  expect(screen.getByText('Enter the cash amount.')).toBeVisible();
+  await user.selectOptions(
+    screen.getByLabelText("Category"),
+    "makeup_certification",
+  );
+  await user.selectOptions(screen.getByLabelText("Benefit type"), "cash");
+  await user.click(screen.getByRole("button", { name: "Preview opportunity" }));
+  expect(screen.getByText("Enter the cash amount.")).toBeVisible();
   expect(onSubmit).not.toHaveBeenCalled();
 });
 ```
@@ -251,7 +261,7 @@ Expected: FAIL because the form and domain types do not exist.
 - [ ] **Step 3: Implement the Zod-validated draft contract**
 
 ```ts
-export type OpportunityCategory = 'hair_promotion' | 'makeup_certification';
+export type OpportunityCategory = "hair_promotion" | "makeup_certification";
 
 export interface OpportunityDraft {
   category: OpportunityCategory;
@@ -399,20 +409,22 @@ git commit -m "feat: persist server-validated applications"
 Test these flows separately:
 
 ```tsx
-it('explains a deterministic failure without requesting a photo', async () => {
+it("explains a deterministic failure without requesting a photo", async () => {
   renderApplicationFlow(makeupOpportunity);
   await answerAdultQuestion(false);
-  await user.click(screen.getByRole('button', { name: 'Check eligibility' }));
-  expect(screen.getByText('This pilot is available to adults only.')).toBeVisible();
-  expect(screen.queryByLabelText('Requested photo')).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Check eligibility" }));
+  expect(
+    screen.getByText("This pilot is available to adults only."),
+  ).toBeVisible();
+  expect(screen.queryByLabelText("Requested photo")).not.toBeInTheDocument();
 });
 ```
 
 ```tsx
-it('keeps future alerts optional when submitting an eligible application', async () => {
+it("keeps future alerts optional when submitting an eligible application", async () => {
   renderApplicationFlow(makeupOpportunity);
   await answerAllEligibleQuestions();
-  await user.click(screen.getByRole('button', { name: 'Submit application' }));
+  await user.click(screen.getByRole("button", { name: "Submit application" }));
   expect(submitApplication).toHaveBeenCalledWith(
     expect.objectContaining({ futureOpportunityConsent: false }),
   );
@@ -521,15 +533,15 @@ git commit -m "feat: add private application review"
 
 ```ts
 export type AttendanceEventType =
-  | 'recruiter_confirmed'
-  | 'applicant_confirmed'
-  | 'completed'
-  | 'recruiter_cancelled'
-  | 'applicant_cancelled'
-  | 'recruiter_no_show'
-  | 'applicant_no_show'
-  | 'dispute_opened'
-  | 'dispute_resolved';
+  | "recruiter_confirmed"
+  | "applicant_confirmed"
+  | "completed"
+  | "recruiter_cancelled"
+  | "applicant_cancelled"
+  | "recruiter_no_show"
+  | "applicant_no_show"
+  | "dispute_opened"
+  | "dispute_resolved";
 ```
 
 The reducer must compute separate recruiter and applicant counts and must not collapse both sides into one score.
@@ -593,11 +605,15 @@ git commit -m "feat: add symmetric attendance history"
 
 ```ts
 export type PilotEvent =
-  | { name: 'opportunity_previewed'; category: OpportunityCategory }
-  | { name: 'application_started'; opportunityId: string }
-  | { name: 'eligibility_checked'; opportunityId: string; eligible: boolean }
-  | { name: 'application_submitted'; opportunityId: string }
-  | { name: 'attendance_recorded'; opportunityId: string; outcome: AttendanceEventType };
+  | { name: "opportunity_previewed"; category: OpportunityCategory }
+  | { name: "application_started"; opportunityId: string }
+  | { name: "eligibility_checked"; opportunityId: string; eligible: boolean }
+  | { name: "application_submitted"; opportunityId: string }
+  | {
+      name: "attendance_recorded";
+      opportunityId: string;
+      outcome: AttendanceEventType;
+    };
 ```
 
 Store operational events without applicant answers, phone numbers, photos, or free text.

@@ -2,9 +2,9 @@
 
 ## Status
 
-This is a draft for review, not an approved app registration or release.
-The Model Pass miniapp and service pre-review have not yet been created or completed, as confirmed by the operator on 2026-09-23.
-Do not submit the app or activate Toss Login from this draft alone.
+This is draft registration copy, not evidence of an approved app or release.
+The miniapp creation and service pre-review status must be confirmed in the console before review submission.
+Do not activate Toss Login from this draft alone.
 The interface defaults to Korean and supports an English switch across application screens; recruiter-written opportunity content stays in its original language.
 
 ## Console Fields
@@ -13,27 +13,31 @@ The interface defaults to Korean and supports an English switch across applicati
 | ---------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Korean app name  | 모델패스                                                             | Working title; confirm before registration                                                                                     |
 | English app name | Model Pass                                                           | Preserved in `src/i18n/brand.ts`                                                                                               |
-| Subtitle         | 헤어·메이크업 모델 지원                                              | 13 characters, within the operator's 20-character limit                                                                        |
+| Subtitle         | 시험 모델 지원, 조건부터 확인                                        | 17 characters, within the operator's 20-character limit                                                                        |
 | appName          | `model-pass`                                                         | Proposed only; immutable after registration, so confirm availability and spelling before creation                              |
 | App type         | Non-game                                                             | Proposed                                                                                                                       |
 | Category         | 생활 > 비즈니스 > 구인구직 (`categoryId: 3832`, `subCategoryId: 22`) | Proposed from the Apps in Toss console MCP `miniapp_category_list` response on 2026-09-23; subject to service/legal pre-review |
 
+## Search Keywords
+
+헤어모델, 메이크업모델, 시험모델, 헤어시험모델, 메이크업시험모델, 미용실모델, 디자이너시험, 메이크업실기시험, 모델지원, 모델모집
+
 ## Detailed Description
 
-헤어 디자이너 승급 시험과 메이크업 국가자격 실기시험에 필요한 모델을 모집할 때, 조건을 분명하게 확인하고 지원할 수 있는 서비스입니다.
-모집자가 공유한 공고 링크를 열면 일정, 장소, 예상 소요 시간, 시술 또는 현금 보상 내용을 볼 수 있습니다.
-지원자는 필수 조건을 먼저 확인한 뒤 해당 공고에 필요한 정보만 입력해 지원합니다.
-모집자는 공고별 조건을 정리하고 지원 내용을 한곳에서 확인할 수 있습니다.
-현재 공개 공고 목록이나 자동 매칭은 제공하지 않습니다.
+헤어 디자이너 승급 시험이나 메이크업 실기시험에 모델로 참여하고 싶다면, 모집자가 공유한 공고 링크에서 일정, 장소, 예상 소요 시간과 시술 또는 현금 보상 내용을 확인할 수 있습니다.
+공고에 필요한 질문에 답하고 '지원 조건 확인'을 누르면 지원 가능 여부와 방문 전 안내를 볼 수 있습니다.
+지원할 수 있다면 '지원서 작성하기'를 눌러 이름 또는 별명, 전화번호, 생년월일을 입력하고 필수 동의 후 '지원서 제출'을 누릅니다.
+제출 후 발급되는 접수 번호와 비공개 관리 코드로 지원 내역을 다시 확인할 수 있습니다.
+모집자는 시험 일정과 필요한 조건을 적어 공고를 게시하고, 지원 내용을 한곳에서 확인한 뒤 참여자를 직접 선택합니다.
 
 ## Assets
 
-- Logo: `public/brand/model-pass-logo-600.png` (600 × 600 opaque PNG); the operator selected the empty salon-chair design on 2026-09-23.
+- Logo: `public/brand/model-pass-logo.png` (600 × 600 PNG); the operator selected the person-shaped design for readability at small sizes on 2026-09-23.
 - Intro screenshot: `assets/apps-in-toss/screenshot-01-intro.png` (636 × 1048 PNG).
 - Opportunity screenshot: `assets/apps-in-toss/screenshot-02-opportunity.png` (636 × 1048 PNG).
 - Application screenshot: `assets/apps-in-toss/screenshot-03-application.png` (636 × 1048 PNG).
 
-The screenshots are browser captures of the current app with a local sample opportunity returned by `scripts/capture-store-screenshots.mjs`.
+The screenshots are browser captures of the current app with a local opportunity clearly labeled as an example and returned by `scripts/capture-store-screenshots.mjs`.
 They are not evidence that a live opportunity or Apps in Toss build exists.
 Regenerate them after any relevant UI change and inspect all three images before submission.
 To regenerate, start Vite with non-production placeholder values in one terminal, then run the capture script in another:

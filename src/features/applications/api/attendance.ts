@@ -20,6 +20,7 @@ export interface AttendanceStatus {
   applicationId: string;
   viewerParty: AttendanceParty;
   selected: boolean;
+  canUnselect: boolean;
   allowedActions: AttendanceEventType[];
   events: AttendanceEvent[];
 }
@@ -174,6 +175,7 @@ function isAttendanceStatus(
     result.applicationId === expectedApplicationId &&
     isParty(result.viewerParty) &&
     typeof result.selected === "boolean" &&
+    typeof result.canUnselect === "boolean" &&
     Array.isArray(result.allowedActions) &&
     result.allowedActions.every(isEventType) &&
     Array.isArray(result.events) &&

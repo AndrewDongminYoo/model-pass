@@ -33,6 +33,7 @@ it("lets the recruiter undo selection before attendance activity", async () => {
       applicationId,
       viewerParty: "recruiter",
       selected: selectedOnServer,
+      canUnselect: selectedOnServer,
       allowedActions: selectedOnServer ? ["recruiter_confirmed"] : [],
       events: [],
     }),
@@ -72,6 +73,7 @@ it("hides undo selection after attendance activity is loaded", async () => {
     applicationId,
     viewerParty: "recruiter",
     selected: true,
+    canUnselect: false,
     allowedActions: [],
     events: [
       {
@@ -103,6 +105,36 @@ it("hides undo selection after attendance activity is loaded", async () => {
   ).not.toBeInTheDocument();
 });
 
+it("hides undo when server reports activity not visible in the event list", async () => {
+  getAttendanceMock.mockResolvedValue({
+    applicationId,
+    viewerParty: "recruiter",
+    selected: true,
+    canUnselect: false,
+    allowedActions: ["recruiter_confirmed"],
+    events: [],
+  });
+  render(
+    <MemoryRouter
+      initialEntries={[
+        `/recruiter/opportunities/${opportunityId}/applications`,
+      ]}
+    >
+      <Routes>
+        <Route
+          path="/recruiter/opportunities/:opportunityId/applications"
+          element={<ApplicationCard application={application} />}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await screen.findByRole("button", { name: "참여 확정" });
+  expect(
+    screen.queryByRole("button", { name: "선택 취소" }),
+  ).not.toBeInTheDocument();
+});
+
 const applicationId = "00000000-0000-4000-8000-000000000101";
 const opportunityId = "00000000-0000-4000-8000-000000000001";
 
@@ -114,6 +146,7 @@ it("requires an authenticated recruiter selection before loading attendance acti
       applicationId,
       viewerParty: "recruiter",
       selected: false,
+      canUnselect: false,
       allowedActions: [],
       events: [],
     })
@@ -121,6 +154,7 @@ it("requires an authenticated recruiter selection before loading attendance acti
       applicationId,
       viewerParty: "recruiter",
       selected: true,
+      canUnselect: true,
       allowedActions: ["recruiter_confirmed"],
       events: [],
     });

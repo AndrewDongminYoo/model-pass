@@ -24,17 +24,15 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
   const [photoErrors, setPhotoErrors] = useState<Record<string, boolean>>({});
   const [pendingPhotoId, setPendingPhotoId] = useState<string>();
   const [selected, setSelected] = useState<boolean>();
-  const [hasAttendance, setHasAttendance] = useState(
-    application.attendance.length > 0,
-  );
+  const [canUnselect, setCanUnselect] = useState(false);
   const [selectionPending, setSelectionPending] = useState(false);
   const [selectionError, setSelectionError] = useState<
     "select" | "unselect" | null
   >(null);
   const handleSelectionStatus = useCallback(
-    (value: boolean, recorded: boolean) => {
+    (value: boolean, allowed: boolean) => {
       setSelected(value);
-      setHasAttendance(recorded);
+      setCanUnselect(allowed);
     },
     [],
   );
@@ -59,6 +57,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
     try {
       await selectApplication({ applicationId: application.id, opportunityId });
       setSelected(true);
+      setCanUnselect(false);
     } catch {
       setSelectionError("select");
     } finally {
@@ -76,6 +75,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
         opportunityId,
       });
       setSelected(false);
+      setCanUnselect(false);
     } catch {
       setSelectionError("unselect");
     } finally {
@@ -226,7 +226,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
               </button>
             </div>
           ) : null}
-          {selected === true && !hasAttendance ? (
+          {selected === true && canUnselect ? (
             <div className="detail-section">
               <button
                 className="button--secondary"

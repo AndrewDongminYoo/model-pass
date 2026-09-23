@@ -124,6 +124,7 @@ beforeEach(() => {
     applicationId,
     viewerParty: "applicant",
     selected: true,
+    canUnselect: false,
     allowedActions: ["applicant_confirmed"],
     events: [],
   });
@@ -135,6 +136,7 @@ it("keeps a submitted applicant in the waiting state until recruiter selection",
     applicationId,
     viewerParty: "applicant",
     selected: false,
+    canUnselect: false,
     allowedActions: [],
     events: [],
   });

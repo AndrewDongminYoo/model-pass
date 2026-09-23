@@ -27,6 +27,7 @@ it("does not put an applicant capability in recruiter requests", async () => {
       applicationId,
       viewerParty: "recruiter",
       selected: true,
+      canUnselect: true,
       allowedActions: ["recruiter_confirmed"],
       events: [],
     },

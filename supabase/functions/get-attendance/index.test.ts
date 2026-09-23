@@ -28,11 +28,33 @@ registerTest(
 
     assertEquals(response.status, 200);
     assertEquals(body.viewerParty, "recruiter");
+    assertEquals(body.canUnselect, true);
     assertEquals(body.allowedActions, [
       "recruiter_confirmed",
       "recruiter_cancelled",
     ]);
     assertEquals(JSON.stringify(body).includes("submissionAttempt"), false);
+  },
+);
+
+registerTest(
+  "hides selection reversal outside the server-authorized window",
+  async () => {
+    const value = dependencies("recruiter", []);
+    value.resolveAccess = () =>
+      Promise.resolve({
+        actor: { party: "recruiter", userId: "recruiter-id" },
+        startsAt: "2099-09-22T03:00:00.000Z",
+        selected: true,
+        canUnselectBeforeAttendance: false,
+      });
+
+    const response = await createGetAttendanceHandler(value)(
+      request({ applicationId, opportunityId }, "recruiter-token"),
+    );
+
+    assertEquals(response.status, 200);
+    assertEquals((await response.json()).canUnselect, false);
   },
 );
 
@@ -47,6 +69,7 @@ registerTest(
         actor: { party: "applicant" },
         startsAt: "2099-09-22T03:00:00.000Z",
         selected: false,
+        canUnselectBeforeAttendance: false,
       });
     value.loadEvents = () => {
       eventsLoaded = true;
@@ -65,6 +88,7 @@ registerTest(
       applicationId,
       viewerParty: "applicant",
       selected: false,
+      canUnselect: false,
       allowedActions: [],
       events: [],
     });
@@ -106,6 +130,7 @@ registerTest("rejects an applicant with the wrong capability", async () => {
             actor: { party: "applicant" },
             startsAt: "2099-09-22T03:00:00.000Z",
             selected: true,
+            canUnselectBeforeAttendance: false,
           }
         : null,
     );
@@ -132,6 +157,7 @@ registerTest(
         actor: { party: "applicant" },
         startsAt: "2099-09-22T03:00:00.000Z",
         selected: true,
+        canUnselectBeforeAttendance: false,
       });
     };
     const response = await createGetAttendanceHandler(
@@ -167,7 +193,9 @@ registerTest(
       dependencies("applicant", events),
     )(request({ applicationId, opportunityId, submissionAttemptId }));
 
-    assertEquals((await recruiterResponse.json()).events, []);
+    const recruiterBody = await recruiterResponse.json();
+    assertEquals(recruiterBody.events, []);
+    assertEquals(recruiterBody.canUnselect, false);
     assertEquals((await applicantResponse.json()).events, events);
   },
 );
@@ -204,6 +232,7 @@ registerTest(
         actor: { party: "applicant" },
         startsAt: "2099-09-22T03:00:00.000Z",
         selected: true,
+        canUnselectBeforeAttendance: false,
       });
     };
     const response = await createGetAttendanceHandler(
@@ -235,6 +264,7 @@ function dependencies(
           party === "recruiter" ? { party, userId: "recruiter-1" } : { party },
         startsAt,
         selected: true,
+        canUnselectBeforeAttendance: party === "recruiter",
       }),
     loadEvents: () => Promise.resolve(events),
   };

@@ -275,5 +275,12 @@ function status(
   events: AttendanceStatus["events"] = [],
   selected = true,
 ): AttendanceStatus {
-  return { applicationId, viewerParty, selected, allowedActions, events };
+  return {
+    applicationId,
+    viewerParty,
+    selected,
+    canUnselect: false,
+    allowedActions,
+    events,
+  };
 }

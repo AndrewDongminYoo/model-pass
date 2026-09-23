@@ -1,5 +1,7 @@
 # Model Pass
 
+![ ](public/brand/how-to-join.png)
+
 Model Pass is the working title for a private, rule-based application tool for hair promotion-exam models and makeup certification-exam models.
 The first market is recruiters based in Gangnam-gu, Seoul, and applicants aged 19 or older.
 

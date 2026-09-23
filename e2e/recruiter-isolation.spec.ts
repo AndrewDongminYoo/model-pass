@@ -27,7 +27,9 @@ test("enforces recruiter application isolation through local Supabase RLS", asyn
       `/recruiter/opportunities/${pilotData.recruiterTwo.opportunityId}/applications`,
     );
     await expect(
-      recruiterOnePage.getByText("No applications yet."),
+      recruiterOnePage
+        .getByRole("alert")
+        .getByText("Could not load applications."),
     ).toBeVisible();
     await expect(
       recruiterOnePage.getByRole("heading", {
@@ -48,7 +50,9 @@ test("enforces recruiter application isolation through local Supabase RLS", asyn
       `/recruiter/opportunities/${pilotData.recruiterOne.opportunityId}/applications`,
     );
     await expect(
-      recruiterTwoPage.getByText("No applications yet."),
+      recruiterTwoPage
+        .getByRole("alert")
+        .getByText("Could not load applications."),
     ).toBeVisible();
     await expect(
       recruiterTwoPage.getByRole("heading", {

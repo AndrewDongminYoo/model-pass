@@ -15,12 +15,15 @@ test("keeps the applicant flow touch-friendly and motion-safe on mobile", async 
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
-  const targetHeights = await page
+  const targets = await page
     .locator("button, .choice")
     .evaluateAll((elements) =>
-      elements.map((element) => element.getBoundingClientRect().height),
+      elements.map((element) => ({
+        label: element.textContent?.trim(),
+        height: element.getBoundingClientRect().height,
+      })),
     );
-  expect(targetHeights.every((height) => height >= 44)).toBe(true);
+  expect(targets.filter(({ height }) => height < 44)).toEqual([]);
 
   await page.getByText("Find an existing application").click();
   const applicationId = page.getByLabel("Application ID");

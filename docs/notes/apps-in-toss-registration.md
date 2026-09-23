@@ -28,7 +28,7 @@ The interface defaults to Korean and supports an English switch across applicati
 
 ## Assets
 
-- Logo: pending comparison with icons from miniapps in the proposed category; do not submit the current draft.
+- Logo: `public/brand/model-pass-logo-600.png` (600 × 600 opaque PNG); the operator selected the empty salon-chair design on 2026-09-23.
 - Intro screenshot: `assets/apps-in-toss/screenshot-01-intro.png` (636 × 1048 PNG).
 - Opportunity screenshot: `assets/apps-in-toss/screenshot-02-opportunity.png` (636 × 1048 PNG).
 - Application screenshot: `assets/apps-in-toss/screenshot-03-application.png` (636 × 1048 PNG).
@@ -46,7 +46,7 @@ node scripts/capture-store-screenshots.mjs
 ## Gates Before Registration or Review
 
 - Confirm the Korean and English names and the immutable `appName` with the operator.
-- Review the final 600 × 600 logo against comparable miniapps before submission.
+- Verify the selected logo in the Apps in Toss console preview before submission.
 - Complete the product-spec service classification and platform pre-review for this recruitment use case.
 - Create the Model Pass miniapp in the verified personal workspace, then configure its exact console appName, terms, privacy links, and Toss Login settings.
 - Implement the Toss WebView SDK and a server-side mTLS code exchange, then connect Toss identity to the existing Supabase authorization and disconnection lifecycle.

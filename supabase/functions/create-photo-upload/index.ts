@@ -1,4 +1,10 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { hashAnonymousRequestSource } from "../_shared/anonymous-quota.ts";
+import {
+  ImageMagick,
+  initializeImageMagick,
+  MagickFormat,
+} from "@imagemagick/magick-wasm";
 import { isEvaluationResult } from "../../../src/features/applications/domain/application.ts";
 import { parseRuleDefinitions } from "../../../src/features/eligibility/domain/types.ts";
 
@@ -6,7 +12,6 @@ const BUCKET_ID = "application-photos";
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 const MAX_GRANT_BODY_BYTES = 4 * 1024;
 const UPLOAD_LIFETIME_SECONDS = 600;
-const RETENTION_DAYS = 30;
 const DOCUMENTED_SIGNING_SECRET_PLACEHOLDER =
   "replace-with-at-least-32-random-bytes";
 const ALLOWED_CONTENT_TYPES = new Set([
@@ -17,6 +22,7 @@ const ALLOWED_CONTENT_TYPES = new Set([
 ]);
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+let imageMagickReady: Promise<void> | undefined;
 
 export interface PhotoApplication {
   applicationId: string;
@@ -41,10 +47,9 @@ export interface PhotoMetadata {
   storagePath: string;
   contentType: string;
   byteSize: number;
-  expiresAt: string;
 }
 
-export type PhotoUploadReservation = Omit<PhotoMetadata, "expiresAt">;
+export type PhotoUploadReservation = PhotoMetadata;
 
 export interface PhotoUploadResult {
   applicationId: string;
@@ -56,6 +61,8 @@ export interface PhotoUploadDependencies {
   now: () => Date;
   createPhotoId: () => string;
   signingSecret: string;
+  consumeQuota: (opportunityId: string, sourceHash: string) => Promise<boolean>;
+  sanitizePhoto: (body: Uint8Array, contentType: string) => Promise<Uint8Array>;
   loadApplication: (
     input: PhotoApplicationLookup,
   ) => Promise<PhotoApplication | null>;
@@ -197,6 +204,25 @@ export function createPhotoUploadHandler(
         }
         assertUploadWindowOpen(application, dependencies.now());
 
+        const sourceHash = await hashAnonymousRequestSource(
+          request,
+          dependencies.signingSecret,
+        );
+        if (sourceHash === null) {
+          throw new PhotoUploadError("Request source is unavailable.", 503);
+        }
+        if (
+          !(await dependencies.consumeQuota(
+            application.opportunityId,
+            sourceHash,
+          ))
+        ) {
+          throw new PhotoUploadError(
+            "Too many photo upload requests. Please try again later.",
+            429,
+          );
+        }
+
         const photoId = dependencies.createPhotoId();
         const storagePath =
           `opportunity/${application.opportunityId}` +
@@ -273,20 +299,25 @@ export function createPhotoUploadHandler(
           );
         }
 
+        const sanitizedBody = await dependencies.sanitizePhoto(
+          body,
+          claims.contentType,
+        );
+
         const reservation: PhotoUploadReservation = {
           id: claims.photoId,
           applicationId: claims.applicationId,
           storagePath: claims.storagePath,
-          contentType: claims.contentType,
-          byteSize: claims.byteSize,
+          contentType: "image/jpeg",
+          byteSize: sanitizedBody.byteLength,
         };
         await dependencies.reserveUpload(reservation);
 
         try {
           await dependencies.uploadObject(
             claims.storagePath,
-            body,
-            claims.contentType,
+            sanitizedBody,
+            reservation.contentType,
             { upsert: false },
           );
         } catch (error) {
@@ -305,10 +336,7 @@ export function createPhotoUploadHandler(
           }
           assertPhotoRequired(currentApplication);
           assertUploadWindowOpen(currentApplication, dependencies.now());
-          metadata = {
-            ...reservation,
-            expiresAt: retentionFor(currentApplication),
-          };
+          metadata = reservation;
         } catch (preFinalizationError) {
           await compensateUploadFailure(dependencies, claims.storagePath);
           throw preFinalizationError;
@@ -555,13 +583,6 @@ function assertPhotoPending(application: PhotoApplication): void {
   }
 }
 
-function retentionFor(application: PhotoApplication): string {
-  const retentionBase = new Date(application.closedAt ?? application.closesAt);
-  const expiresAt = new Date(retentionBase);
-  expiresAt.setUTCDate(expiresAt.getUTCDate() + RETENTION_DAYS);
-  return expiresAt.toISOString();
-}
-
 async function readBoundedJson(
   request: Request,
   maximumBytes: number,
@@ -698,6 +719,71 @@ function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), { status, headers: corsHeaders });
 }
 
+export async function sanitizeUploadedPhoto(
+  body: Uint8Array,
+  contentType: string,
+): Promise<Uint8Array> {
+  const jpeg =
+    body.length >= 3 &&
+    body[0] === 0xff &&
+    body[1] === 0xd8 &&
+    body[2] === 0xff;
+  const png =
+    body.length >= 8 &&
+    [137, 80, 78, 71, 13, 10, 26, 10].every(
+      (byte, index) => body[index] === byte,
+    );
+  const heif =
+    body.length >= 12 &&
+    new TextDecoder().decode(body.subarray(4, 8)) === "ftyp" &&
+    ["heic", "heix", "hevc", "hevx", "mif1", "msf1"].includes(
+      new TextDecoder().decode(body.subarray(8, 12)),
+    );
+  if (!(
+    (contentType === "image/jpeg" && jpeg) ||
+    (contentType === "image/png" && png) ||
+    ((contentType === "image/heic" || contentType === "image/heif") && heif)
+  )) {
+    throw new PhotoUploadError("Photo content does not match its type.", 415);
+  }
+
+  imageMagickReady ??= Deno.readFile(
+    new URL("./magick.wasm", import.meta.url),
+  ).then(initializeImageMagick);
+  await imageMagickReady;
+
+  try {
+    const output = ImageMagick.read(body, (image): Uint8Array => {
+      const acceptedFormat =
+        contentType === "image/jpeg"
+          ? image.format === MagickFormat.Jpeg
+          : contentType === "image/png"
+            ? image.format === MagickFormat.Png
+            : image.format === MagickFormat.Heic ||
+              image.format === MagickFormat.Heif;
+      if (!acceptedFormat || image.width * image.height > 16_000_000) {
+        throw new PhotoUploadError(
+          "Photo format or dimensions are invalid.",
+          415,
+        );
+      }
+      image.strip();
+      image.quality = 85;
+      return image.write(MagickFormat.Jpeg, (data) => Uint8Array.from(data));
+    });
+    if (output.length === 0 || output.length > MAX_PHOTO_BYTES) {
+      throw new PhotoUploadError(
+        "Re-encoded photo exceeds the size limit.",
+        413,
+      );
+    }
+    return output;
+  } catch (error) {
+    if (error instanceof PhotoUploadError) throw error;
+    throw new PhotoUploadError("Photo could not be decoded.", 415);
+  }
+}
+
 export function createSupabaseDependencies(
   client: SupabaseClient,
   signingSecret: string,
@@ -708,6 +794,22 @@ export function createSupabaseDependencies(
     now: () => new Date(),
     createPhotoId: () => crypto.randomUUID(),
     signingSecret: validatedSigningSecret,
+    sanitizePhoto: sanitizeUploadedPhoto,
+    async consumeQuota(opportunityId, sourceHash) {
+      const { data, error } = await client.rpc(
+        "consume_anonymous_request_quota",
+        {
+          p_opportunity_id: opportunityId,
+          p_action: "create_photo_upload",
+          p_source_hash: sourceHash,
+          p_limit: 20,
+        },
+      );
+      if (error !== null || typeof data !== "boolean") {
+        throw new Error("Failed to check anonymous photo grant quota.");
+      }
+      return data;
+    },
     async loadApplication(input) {
       const { data: application, error: applicationError } = await client
         .from("applications")

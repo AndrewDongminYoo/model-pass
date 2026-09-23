@@ -34,8 +34,12 @@ verify_jwt = false
 
 [functions.create-photo-upload]
 verify_jwt = false
+static_files = ["./functions/create-photo-upload/magick.wasm"]
 
 [functions.create-photo-view]
+verify_jwt = true
+
+[functions.close-opportunity]
 verify_jwt = true
 
 [functions.record-attendance]

@@ -360,20 +360,16 @@ interface ReservationRow {
 
 export function createSupabaseDependencies(
   client: SupabaseClient,
-  serviceRoleKey: string,
+  cleanupInvocationSecret: string,
 ): CleanupDependencies {
   return {
     now: () => new Date(),
     createInvocationId: () => crypto.randomUUID(),
     async authorize(accessToken) {
-      if (
+      return (
         accessToken !== null &&
-        (await constantTimeEqual(accessToken, serviceRoleKey))
-      )
-        return true;
-      if (accessToken === null) return false;
-      const { data, error } = await client.auth.getUser(accessToken);
-      return error === null && data.user?.app_metadata.role === "operator";
+        (await constantTimeEqual(accessToken, cleanupInvocationSecret))
+      );
     },
     async listExpiredPhotos(now) {
       const { data, error } = await client.rpc(
@@ -598,7 +594,14 @@ async function constantTimeEqual(
 if (import.meta.main) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) {
+  const cleanupInvocationSecret = Deno.env.get("PHOTO_CLEANUP_TOKEN");
+  if (
+    !supabaseUrl ||
+    !serviceRoleKey ||
+    !cleanupInvocationSecret ||
+    cleanupInvocationSecret.length < 32 ||
+    cleanupInvocationSecret === serviceRoleKey
+  ) {
     throw new Error("Cleanup server environment is not configured.");
   }
   const client = createClient(supabaseUrl, serviceRoleKey, {
@@ -606,7 +609,7 @@ if (import.meta.main) {
   });
   Deno.serve(
     createCleanupExpiredPhotosHandler(
-      createSupabaseDependencies(client, serviceRoleKey),
+      createSupabaseDependencies(client, cleanupInvocationSecret),
     ),
   );
 }

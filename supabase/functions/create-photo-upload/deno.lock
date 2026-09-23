@@ -1,10 +1,14 @@
 {
   "version": "5",
   "specifiers": {
+    "npm:@imagemagick/magick-wasm@0.0.43": "0.0.43",
     "npm:@supabase/supabase-js@2.116.0": "2.116.0",
     "npm:zod@4.6.5": "4.6.5"
   },
   "npm": {
+    "@imagemagick/magick-wasm@0.0.43": {
+      "integrity": "sha512-+Wlr3eEl4JlqLwrhAHBlf4VDzOWiFa8L2hYl7mOMXCgq896KghEnh3Go35nuZJMfmE6lX2waBZdr+u9FVluJLA=="
+    },
     "@supabase/auth-js@2.116.0": {
       "integrity": "sha512-Cmosty12gyKGK9N3bQb+lMmuAFev5nmUzaR1AsmZHqKOAGzqX1VQzmp49CNPwOx/pw0H9Qqk4rs9yhwTlKpfDg==",
       "dependencies": [
@@ -62,6 +66,7 @@
   },
   "workspace": {
     "dependencies": [
+      "npm:@imagemagick/magick-wasm@0.0.43",
       "npm:@supabase/supabase-js@2.116.0",
       "npm:zod@4.6.5"
     ]

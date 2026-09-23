@@ -1,4 +1,5 @@
 import type { RuleDefinition } from "../../../src/features/eligibility/domain/types.ts";
+import { hashAnonymousRequestSource } from "../_shared/anonymous-quota.ts";
 import {
   SubmissionError,
   createSubmissionFingerprint,
@@ -76,16 +77,22 @@ function createDependencies(
   options: {
     existingAttempt?: ExistingApplicationAttempt | null;
     persistenceResult?: ApplicationPersistenceResult;
+    quotaAllowed?: boolean;
   } = {},
 ) {
   const persisted: ApplicationPersistenceCommand[] = [];
   let opportunityLoadCount = 0;
+  let quotaConsumptionCount = 0;
   const dependencies: SubmissionDependencies = {
     now: () => currentDate,
     loadExistingAttempt: () => Promise.resolve(options.existingAttempt ?? null),
     loadOpportunity: () => {
       opportunityLoadCount += 1;
       return Promise.resolve(opportunity);
+    },
+    consumeQuota: () => {
+      quotaConsumptionCount += 1;
+      return Promise.resolve(options.quotaAllowed ?? true);
     },
     persistApplication: (command) => {
       persisted.push(command);
@@ -103,13 +110,138 @@ function createDependencies(
     dependencies,
     persisted,
     getOpportunityLoadCount: () => opportunityLoadCount,
+    getQuotaConsumptionCount: () => quotaConsumptionCount,
   };
 }
+
+registerTest(
+  "binds anonymous quota to the forwarded source without storing the IP",
+  async () => {
+    const first = await hashAnonymousRequestSource(
+      new Request("http://localhost", {
+        headers: { "X-Forwarded-For": "192.0.2.10" },
+      }),
+      "test-secret",
+    );
+    const second = await hashAnonymousRequestSource(
+      new Request("http://localhost", {
+        headers: { "X-Forwarded-For": "192.0.2.11" },
+      }),
+      "test-secret",
+    );
+    assertEquals(first?.length, 64);
+    assertEquals(first === second, false);
+    assertEquals(first?.includes("192.0.2.10"), false);
+    assertEquals(
+      await hashAnonymousRequestSource(
+        new Request("http://localhost"),
+        "test-secret",
+      ),
+      null,
+    );
+  },
+);
+
+registerTest(
+  "fails closed when the gateway source is unavailable",
+  async () => {
+    const test = createDependencies();
+    const response = await createSubmitApplicationHandler(
+      test.dependencies,
+      "test-secret",
+    )(
+      new Request("http://localhost/functions/v1/submit-application", {
+        method: "POST",
+        body: JSON.stringify(createInput()),
+      }),
+    );
+    assertEquals(response.status, 503);
+    assertEquals(test.getQuotaConsumptionCount(), 0);
+    assertEquals(test.persisted.length, 0);
+  },
+);
+
+registerTest(
+  "does not consume quota for a failed eligibility check",
+  async () => {
+    const test = createDependencies();
+    await expectSubmissionError(
+      () =>
+        submitApplication(
+          createInput({
+            applicant: {
+              displayName: "Applicant",
+              phone: "010-1234-5678",
+              birthDate: "2015-09-22",
+            },
+          }),
+          test.dependencies,
+        ),
+      "Applicants must be at least 19 years old.",
+    );
+    assertEquals(test.getQuotaConsumptionCount(), 0);
+  },
+);
+
+registerTest("rejects an exhausted anonymous submission quota", async () => {
+  const { dependencies, persisted } = createDependencies(
+    createOpportunity(),
+    now,
+    {
+      quotaAllowed: false,
+    },
+  );
+  const error = await expectSubmissionError(
+    () => submitApplication(createInput(), dependencies),
+    "Too many applications for this opportunity. Please try again later.",
+  );
+  assertEquals(error.status, 429);
+  assertEquals(persisted.length, 0);
+});
+
+registerTest(
+  "rejects an oversized submission body before parsing",
+  async () => {
+    const { dependencies, persisted } = createDependencies();
+    const response = await createSubmitApplicationHandler(
+      dependencies,
+      "test-secret",
+    )(
+      new Request("http://localhost/functions/v1/submit-application", {
+        method: "POST",
+        body: "x".repeat(262_145),
+      }),
+    );
+
+    assertEquals(response.status, 413);
+    assertEquals(persisted.length, 0);
+  },
+);
+
+registerTest("rejects an oversized declared submission length", async () => {
+  const { dependencies, persisted } = createDependencies();
+  const response = await createSubmitApplicationHandler(
+    dependencies,
+    "test-secret",
+  )(
+    new Request("http://localhost/functions/v1/submit-application", {
+      method: "POST",
+      headers: { "Content-Length": "262145" },
+      body: "{}",
+    }),
+  );
+
+  assertEquals(response.status, 413);
+  assertEquals(persisted.length, 0);
+});
 
 registerTest("allows Supabase browser preflight headers", async () => {
   // Production break: omitting x-client-info makes Supabase JS browser preflight fail before submission.
   const { dependencies } = createDependencies();
-  const response = await createSubmitApplicationHandler(dependencies)(
+  const response = await createSubmitApplicationHandler(
+    dependencies,
+    "test-secret",
+  )(
     new Request("http://localhost/functions/v1/submit-application", {
       method: "OPTIONS",
       headers: {

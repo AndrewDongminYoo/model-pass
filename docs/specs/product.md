@@ -69,6 +69,7 @@ The operator does not rank candidates or negotiate on behalf of either party in 
 7. Request job-specific photos only from applicants who passed non-photo rules.
 8. Select and contact the applicant directly.
 9. Confirm attendance before the appointment and record the factual outcome afterward.
+10. Close the opportunity early through an authenticated, irreversible server action when recruitment ends. Closing stops new applications and starts the job-scoped retention clock without removing factual attendance history.
 
 ### Applicant Flow
 

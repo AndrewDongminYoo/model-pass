@@ -3,6 +3,7 @@ import {
   PhotoUploadError,
   createPhotoUploadHandler,
   createSupabaseDependencies,
+  sanitizeUploadedPhoto,
   validatePhotoUploadSigningSecret,
   type PhotoApplication,
   type PhotoMetadata,
@@ -23,6 +24,80 @@ const submissionAttemptId = "00000000-0000-4000-8000-000000000201";
 const photoId = "00000000-0000-4000-8000-000000000301";
 const now = new Date("2026-09-22T03:00:00.000Z");
 const functionUrl = "http://localhost/functions/v1/create-photo-upload";
+const pngWithLocation = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAADUExURf8AABniCTcAAAAHdElNRQfqCRcAOxHt11DZAAAAHnRFWHRjb21tZW50AEdQUz1wcml2YXRlLWNvb3JkaW5hdGXpXICZAAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDI2LTA5LTIzVDAwOjU5OjE3KzAwOjAw2ZU8AgAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyNi0wOS0yM1QwMDo1OToxNyswMDowMKjIhL4AAAAodEVYdGRhdGU6dGltZXN0YW1wADIwMjYtMDktMjNUMDA6NTk6MTcrMDA6MDD/3aVhAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==",
+  ),
+  (character) => character.charCodeAt(0),
+);
+
+registerTest(
+  "includes the image decoder in the hosted function bundle",
+  async () => {
+    const config = await Deno.readTextFile(
+      new URL("../../config.toml", import.meta.url),
+    );
+    const asset = await Deno.readFile(
+      new URL("./magick.wasm", import.meta.url),
+    );
+    assertEquals(
+      /\[functions\.create-photo-upload\][^[]*static_files\s*=\s*\["\.\/functions\/create-photo-upload\/magick\.wasm"\]/s.test(
+        config,
+      ),
+      true,
+    );
+    assertEquals(asset.length > 0 && asset.length < 20 * 1024 * 1024, true);
+  },
+);
+
+registerTest(
+  "re-encodes a photo without embedded metadata and rejects a spoofed MIME type",
+  async () => {
+    const cleaned = await sanitizeUploadedPhoto(pngWithLocation, "image/png");
+    assertEquals(Array.from(cleaned.slice(0, 3)), [255, 216, 255]);
+    assertEquals(
+      new TextDecoder().decode(cleaned).includes("private-coordinate"),
+      false,
+    );
+
+    let rejected = false;
+    try {
+      await sanitizeUploadedPhoto(pngWithLocation, "image/jpeg");
+    } catch (error) {
+      rejected = error instanceof PhotoUploadError && error.status === 415;
+    }
+    assertEquals(rejected, true);
+  },
+);
+
+registerTest(
+  "stores only the re-encoded image and its actual byte count",
+  async () => {
+    const fixture = createFixture({ sanitizePhoto: sanitizeUploadedPhoto });
+    const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+    const grant = (await readJson(
+      await issueGrant(handler, {
+        ...validGrantRequest(),
+        contentType: "image/png",
+        byteSize: pngWithLocation.length,
+      }),
+    )) as { uploadUrl: string; storagePath: string };
+
+    const response = await upload(handler, grant, pngWithLocation, "image/png");
+
+    assertEquals(response.status, 201);
+    assertEquals(fixture.uploads[0]?.contentType, "image/jpeg");
+    assertEquals(
+      Array.from(fixture.uploads[0]?.body.slice(0, 3) ?? []),
+      [255, 216, 255],
+    );
+    assertEquals(
+      fixture.metadata[0]?.byteSize,
+      fixture.uploads[0]?.body.length,
+    );
+    assertEquals(fixture.metadata[0]?.contentType, "image/jpeg");
+  },
+);
 
 registerTest(
   "issues an upload grant only for the exact completed application tuple",
@@ -164,7 +239,6 @@ registerTest(
       storagePath: expectedPath(),
       contentType: "image/jpeg",
       byteSize: 3,
-      expiresAt: "2026-10-30T03:00:00.000Z",
     };
     for (const { code, status } of [
       { code: "22023", status: 400 },
@@ -314,6 +388,17 @@ registerTest("rejects grant minting after the opportunity closes", async () => {
   );
 
   assertEquals(response.status, 409);
+  assertEquals(fixture.uploads.length, 0);
+});
+
+registerTest("rejects an exhausted anonymous photo grant quota", async () => {
+  const fixture = createFixture({ quotaAllowed: false });
+  const response = await issueGrant(
+    createPhotoUploadHandler(fixture.dependencies, functionUrl),
+    validGrantRequest(),
+  );
+
+  assertEquals(response.status, 429);
   assertEquals(fixture.uploads.length, 0);
 });
 
@@ -519,7 +604,7 @@ registerTest(
     const response = await upload(handler, grant, bytes(3), "image/jpeg");
 
     assertEquals(response.status, 201);
-    assertEquals(fixture.metadata[0]?.expiresAt, "2026-10-31T03:00:00.000Z");
+    assertEquals(fixture.metadata.length, 1);
     assertEquals(fixture.getApplicationLoadCount(), 3);
   },
 );
@@ -546,7 +631,6 @@ registerTest(
       storagePath: expectedPath(),
       contentType: "image/jpeg",
       byteSize: 3,
-      expiresAt: "2026-10-30T03:00:00.000Z",
     });
     assertEquals(await readJson(response), {
       applicationId,
@@ -711,6 +795,8 @@ function createFixture(
     finalizationAlwaysAmbiguous?: boolean;
     malformedFinalizationResult?: boolean;
     closed?: boolean;
+    quotaAllowed?: boolean;
+    sanitizePhoto?: PhotoUploadDependencies["sanitizePhoto"];
   } = {},
 ) {
   let currentTime = now;
@@ -740,6 +826,8 @@ function createFixture(
     now: () => currentTime,
     createPhotoId: () => photoId,
     signingSecret: "test-signing-secret-with-sufficient-length",
+    consumeQuota: () => Promise.resolve(options.quotaAllowed ?? true),
+    sanitizePhoto: options.sanitizePhoto ?? ((body) => Promise.resolve(body)),
     async loadApplication(input) {
       applicationLoadCount += 1;
       if (
@@ -913,7 +1001,10 @@ function issueGrant(
   return handler(
     new Request(functionUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Forwarded-For": "192.0.2.10",
+      },
       body: JSON.stringify(body),
     }),
   );

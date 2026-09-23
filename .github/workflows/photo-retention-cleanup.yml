@@ -19,7 +19,7 @@ jobs:
       - name: Invoke photo retention cleanup
         env:
           SUPABASE_URL: ${{ secrets.MODEL_PASS_SUPABASE_URL }}
-          OPERATOR_TOKEN: ${{ secrets.MODEL_PASS_OPERATOR_TOKEN }}
+          OPERATOR_TOKEN: ${{ secrets.MODEL_PASS_PHOTO_CLEANUP_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail

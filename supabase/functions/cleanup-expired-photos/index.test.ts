@@ -448,6 +448,29 @@ registerTest("denies an invalid cleanup bearer", async () => {
   assertEquals(await dependencies.authorize("invalid-token"), false);
 });
 
+registerTest(
+  "accepts only the dedicated cleanup invocation secret",
+  async () => {
+    // Production break: a leaked GitHub Actions token must not grant unrestricted database access.
+    const client = {
+      auth: {
+        getUser: () =>
+          Promise.resolve({
+            data: { user: null },
+            error: new Error("invalid"),
+          }),
+      },
+    };
+    const dependencies = createSupabaseDependencies(
+      client as never,
+      "dedicated-cleanup-token",
+    );
+
+    assertEquals(await dependencies.authorize("service-key"), false);
+    assertEquals(await dependencies.authorize("dedicated-cleanup-token"), true);
+  },
+);
+
 function cleanupState() {
   let photos: CleanupPhoto[] = [
     photo("expired", false),

@@ -6,26 +6,40 @@ import {
 } from "../../applications/api/application-photos";
 import { AttendanceSummary } from "../../attendance/components/AttendanceSummary";
 import { AttendanceManager } from "../../attendance/components/AttendanceManager";
-import { selectApplication } from "../../applications/api/attendance";
+import {
+  selectApplication,
+  unselectApplication,
+} from "../../applications/api/attendance";
 import { useI18n } from "../../../i18n/locale";
 import { localizedRuleReason } from "../../eligibility/presentation/ko";
 
 interface ApplicationCardProps {
   application: RecruiterApplication;
+  selectionAllowed?: boolean;
 }
 
-export function ApplicationCard({ application }: ApplicationCardProps) {
+export function ApplicationCard({
+  application,
+  selectionAllowed = true,
+}: ApplicationCardProps) {
   const { locale, t } = useI18n();
   const { opportunityId } = useParams<{ opportunityId: string }>();
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
   const [photoErrors, setPhotoErrors] = useState<Record<string, boolean>>({});
   const [pendingPhotoId, setPendingPhotoId] = useState<string>();
   const [selected, setSelected] = useState<boolean>();
+  const [canUnselect, setCanUnselect] = useState(false);
   const [selectionPending, setSelectionPending] = useState(false);
-  const [selectionError, setSelectionError] = useState(false);
-  const handleSelectionStatus = useCallback((value: boolean) => {
-    setSelected(value);
-  }, []);
+  const [selectionError, setSelectionError] = useState<
+    "select" | "unselect" | null
+  >(null);
+  const handleSelectionStatus = useCallback(
+    (value: boolean, allowed: boolean) => {
+      setSelected(value);
+      setCanUnselect(allowed);
+    },
+    [],
+  );
 
   async function requestPhoto(photoId: string) {
     setPendingPhotoId(photoId);
@@ -41,14 +55,35 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
   }
 
   async function select() {
-    if (opportunityId === undefined || selectionPending) return;
+    if (opportunityId === undefined || selectionPending || !selectionAllowed)
+      return;
     setSelectionPending(true);
-    setSelectionError(false);
+    setSelectionError(null);
     try {
       await selectApplication({ applicationId: application.id, opportunityId });
       setSelected(true);
+      setCanUnselect(false);
     } catch {
-      setSelectionError(true);
+      setSelectionError("select");
+    } finally {
+      setSelectionPending(false);
+    }
+  }
+
+  async function unselect() {
+    if (opportunityId === undefined || selectionPending || !selectionAllowed)
+      return;
+    setSelectionPending(true);
+    setSelectionError(null);
+    try {
+      await unselectApplication({
+        applicationId: application.id,
+        opportunityId,
+      });
+      setSelected(false);
+      setCanUnselect(false);
+    } catch {
+      setSelectionError("unselect");
     } finally {
       setSelectionPending(false);
     }
@@ -184,7 +219,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
         />
       ) : (
         <>
-          {selected === false ? (
+          {selectionAllowed && selected === false ? (
             <div className="detail-section">
               <button
                 type="button"
@@ -197,12 +232,31 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
               </button>
             </div>
           ) : null}
+          {selectionAllowed && selected === true && canUnselect ? (
+            <div className="detail-section">
+              <button
+                className="button--secondary"
+                type="button"
+                disabled={selectionPending}
+                onClick={() => void unselect()}
+              >
+                {selectionPending
+                  ? t("Undoing selection…", "선택을 취소하고 있습니다…")
+                  : t("Undo selection", "선택 취소")}
+              </button>
+            </div>
+          ) : null}
           {selectionError ? (
             <p role="alert">
-              {t(
-                "Could not select this application. Try again.",
-                "지원자를 선택하지 못했습니다. 다시 시도해 주세요.",
-              )}
+              {selectionError === "select"
+                ? t(
+                    "Could not select this application. Try again.",
+                    "지원자를 선택하지 못했습니다. 다시 시도해 주세요.",
+                  )
+                : t(
+                    "Could not undo selection. Attendance may already be recorded.",
+                    "선택을 취소하지 못했습니다. 참여 기록이 이미 있을 수 있습니다.",
+                  )}
             </p>
           ) : null}
           <AttendanceManager

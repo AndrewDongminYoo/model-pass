@@ -172,6 +172,70 @@ registerTest(
 );
 
 registerTest(
+  "rejects cancellation at the appointment start so it cannot preempt a no-show",
+  async () => {
+    // Production break: a late applicant cancellation occupies the unique final-outcome slot and blocks the recruiter's no-show report.
+    const recorded: unknown[] = [];
+    const response = await createRecordAttendanceHandler(
+      dependencies(
+        { party: "applicant" },
+        recorded,
+        "2026-09-22T03:00:00.000Z",
+        "2026-09-22T03:00:00.000Z",
+      ),
+    )(
+      request({
+        applicationId,
+        opportunityId,
+        submissionAttemptId,
+        eventType: "applicant_cancelled",
+        party: "applicant",
+      }),
+    );
+
+    assertEquals(response.status, 409);
+    assertEquals(recorded.length, 0);
+  },
+);
+
+registerTest(
+  "uses the applicant capability when a recruiter session bearer is present",
+  async () => {
+    // Production break: the shared client session must not turn an applicant capability request into a recruiter action.
+    let resolvedAccessToken: string | undefined;
+    const recorded: unknown[] = [];
+    const value = dependencies({ party: "applicant" }, recorded);
+    value.resolveAccess = (_capability, accessToken) => {
+      resolvedAccessToken = accessToken;
+      return Promise.resolve({
+        actor: { party: "applicant" },
+        startsAt: "2099-09-22T03:00:00.000Z",
+        selected: true,
+      });
+    };
+    const response = await createRecordAttendanceHandler(
+      value,
+      "legacy-anon-key",
+    )(
+      request(
+        {
+          applicationId,
+          opportunityId,
+          submissionAttemptId,
+          eventType: "applicant_cancelled",
+          party: "applicant",
+        },
+        "recruiter-session-jwt",
+      ),
+    );
+
+    assertEquals(response.status, 201);
+    assertEquals(resolvedAccessToken, undefined);
+    assertEquals(recorded.length, 1);
+  },
+);
+
+registerTest(
   "allows a recruiter to record its own cancellation before the appointment start",
   async () => {
     // Production break: treating cancellation as a post-start-only factual outcome prevents a recruiter from recording a timely cancellation.

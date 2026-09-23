@@ -1,5 +1,6 @@
 {
   "imports": {
+    "@imagemagick/magick-wasm": "npm:@imagemagick/magick-wasm@0.0.43",
     "@supabase/supabase-js": "npm:@supabase/supabase-js@2.116.0",
     "zod": "npm:zod@4.6.5"
   }

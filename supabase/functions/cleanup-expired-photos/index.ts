@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const BUCKET_ID = "application-photos";
 const MAX_BODY_BYTES = 1024;
+const DOCUMENTED_CLEANUP_TOKEN_PLACEHOLDER =
+  "replace-with-a-different-at-least-32-byte-random-secret";
 
 export interface CleanupPhoto {
   id: string;
@@ -57,6 +59,7 @@ export interface CleanupDependencies {
   countPendingDrafts: (now: string) => Promise<number>;
   countProjectedPendingDrafts: (now: string) => Promise<number>;
   deletePendingDrafts: (now: string) => Promise<number>;
+  deleteExpiredQuotas: (now: string) => Promise<void>;
   reportError: (message: string, error: unknown) => void;
 }
 
@@ -241,6 +244,7 @@ export async function cleanupExpiredPhotos(
   }
 
   result.pendingDrafts.deleted = await dependencies.deletePendingDrafts(now);
+  await dependencies.deleteExpiredQuotas(now);
   return result;
 }
 
@@ -360,20 +364,16 @@ interface ReservationRow {
 
 export function createSupabaseDependencies(
   client: SupabaseClient,
-  serviceRoleKey: string,
+  cleanupInvocationSecret: string,
 ): CleanupDependencies {
   return {
     now: () => new Date(),
     createInvocationId: () => crypto.randomUUID(),
     async authorize(accessToken) {
-      if (
+      return (
         accessToken !== null &&
-        (await constantTimeEqual(accessToken, serviceRoleKey))
-      )
-        return true;
-      if (accessToken === null) return false;
-      const { data, error } = await client.auth.getUser(accessToken);
-      return error === null && data.user?.app_metadata.role === "operator";
+        (await constantTimeEqual(accessToken, cleanupInvocationSecret))
+      );
     },
     async listExpiredPhotos(now) {
       const { data, error } = await client.rpc(
@@ -544,6 +544,13 @@ export function createSupabaseDependencies(
       if (error !== null) throw error;
       return Number(data);
     },
+    async deleteExpiredQuotas(now) {
+      const { error } = await client.rpc(
+        "delete_expired_anonymous_request_quota",
+        { p_now: now },
+      );
+      if (error !== null) throw error;
+    },
     reportError(message, error) {
       console.error(message, error);
     },
@@ -595,18 +602,37 @@ async function constantTimeEqual(
   return difference === 0;
 }
 
+export function validateCleanupInvocationSecret(
+  secret: string | undefined,
+  serviceRoleKey: string,
+): string {
+  if (
+    secret === undefined ||
+    secret === DOCUMENTED_CLEANUP_TOKEN_PLACEHOLDER ||
+    new TextEncoder().encode(secret).byteLength < 32 ||
+    secret === serviceRoleKey
+  ) {
+    throw new Error("Cleanup server environment is not configured.");
+  }
+  return secret;
+}
+
 if (import.meta.main) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!supabaseUrl || !serviceRoleKey) {
     throw new Error("Cleanup server environment is not configured.");
   }
+  const cleanupInvocationSecret = validateCleanupInvocationSecret(
+    Deno.env.get("PHOTO_CLEANUP_TOKEN"),
+    serviceRoleKey,
+  );
   const client = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
   Deno.serve(
     createCleanupExpiredPhotosHandler(
-      createSupabaseDependencies(client, serviceRoleKey),
+      createSupabaseDependencies(client, cleanupInvocationSecret),
     ),
   );
 }

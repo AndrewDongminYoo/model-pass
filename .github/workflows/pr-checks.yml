@@ -1,0 +1,54 @@
+name: PR checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: pnpm/setup@v2
+        with:
+          version: 11.24.0
+          cache: true
+          install: false
+      - run: pnpm install --frozen-lockfile
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.7
+          cache: true
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.117.0
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
+      - name: Test Edge Functions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test_file in supabase/functions/*/index.test.ts; do
+            function_dir="${test_file%/index.test.ts}"
+            deno test -A --sloppy-imports --frozen-lockfile \
+              --config "$function_dir/deno.json" \
+              --lock "$function_dir/deno.lock" \
+              "$test_file"
+          done
+      - run: supabase start
+      - run: supabase test db
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e

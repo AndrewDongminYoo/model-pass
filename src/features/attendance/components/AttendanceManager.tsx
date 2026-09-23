@@ -18,7 +18,7 @@ interface AttendanceManagerProps {
   capability: AttendanceCapability;
   viewerParty: AttendanceParty;
   initialEvents?: AttendanceEvent[];
-  onSelectionStatus?: (selected: boolean) => void;
+  onSelectionStatus?: (selected: boolean, canUnselect: boolean) => void;
 }
 
 type AttendanceError = { kind: "load" } | { kind: "submit"; message?: string };
@@ -65,7 +65,7 @@ export function AttendanceManager({
       }
       if (activeRef.current) {
         setAttendance(loaded);
-        onSelectionStatus?.(loaded.selected);
+        onSelectionStatus?.(loaded.selected, loaded.canUnselect);
       }
     } catch {
       if (activeRef.current) {
@@ -89,7 +89,7 @@ export function AttendanceManager({
           throw new Error("Attendance viewer mismatch.");
         }
         setAttendance(loaded);
-        onSelectionStatus?.(loaded.selected);
+        onSelectionStatus?.(loaded.selected, loaded.canUnselect);
       })
       .catch(() => {
         if (activeRef.current) {
@@ -138,7 +138,7 @@ export function AttendanceManager({
       }
       if (activeRef.current) {
         setAttendance(refreshed);
-        onSelectionStatus?.(refreshed.selected);
+        onSelectionStatus?.(refreshed.selected, refreshed.canUnselect);
         setSuccess(true);
       }
     } catch (submitError) {

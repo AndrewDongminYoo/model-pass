@@ -2,20 +2,22 @@
 
 ## Scope
 
-The `cleanup-expired-photos` function removes expired job-scoped photos, reconciles stale upload reservations, and deletes abandoned `pending_photo` drafts after an opportunity closes.
+The `cleanup-expired-photos` function removes expired job-scoped photos, reconciles stale upload reservations, deletes abandoned `pending_photo` drafts after an opportunity closes, and expires IP-derived anonymous quota hashes.
 The function does not delete submitted applications.
-Invoke it only with a service-role token or an authenticated operator JWT.
-Never place either token in client code, logs, or documentation.
+Invoke it only with the dedicated `PHOTO_CLEANUP_TOKEN` bearer.
+Never place this token or the database service-role key in client code, logs, or documentation.
 
 ## Scheduled Execution
 
-GitHub Actions runs [photo-retention-cleanup.yml](../../.github/workflows/photo-retention-cleanup.yml) every day at 03:17 UTC and supports an operator-initiated `workflow_dispatch` run.
+GitHub Actions runs [photo-retention-cleanup.yml](../../.github/workflows/photo-retention-cleanup.yml) hourly at minute 17 UTC and supports an operator-initiated `workflow_dispatch` run.
+The hourly invocation expires quota buckets after their 24-hour boundary even when no new anonymous request arrives; delayed or failed scheduled runs require operator follow-up.
 The workflow sends exactly `{"dryRun":false}` to the cleanup function.
 It has no GitHub token permissions and permits one active cleanup run at a time; queued runs do not cancel an in-progress cleanup.
-The workflow reads only the `MODEL_PASS_SUPABASE_URL` and `MODEL_PASS_OPERATOR_TOKEN` repository secrets.
+The workflow reads only the `MODEL_PASS_SUPABASE_URL` and `MODEL_PASS_PHOTO_CLEANUP_TOKEN` repository secrets.
 It never prints either secret or the request URL.
 
 A designated repository administrator owns setting, rotating, and removing those two repository secrets.
+Set `PHOTO_CLEANUP_TOKEN` in the Edge Function environment to the same randomly generated value (at least 32 bytes), and never reuse `SUPABASE_SERVICE_ROLE_KEY`.
 The production privacy operator owns reviewing failed runs and the resulting cleanup evidence.
 Assign both roles before enabling the workflow in a production repository.
 Do not store either value as a workflow variable, environment-level plaintext value, or local documentation example.
@@ -37,6 +39,7 @@ One invocation uses this order:
 6. Recheck that the exact reservation still exists and matching photo metadata is still absent while holding the application lock.
 7. Remove the exact Storage object, then delete only the reservation with the matching invocation claim.
 8. Delete closed or scheduled-closed `pending_photo` drafts only when no reservation or photo metadata remains.
+9. Delete anonymous quota buckets at or past their 24-hour boundary, without relying on another anonymous request.
 
 For a stale reservation with exact photo metadata, cleanup removes only the reservation.
 For a stale reservation without exact photo metadata, cleanup removes the exact Storage object before it removes the reservation.
@@ -67,7 +70,7 @@ Invoke a non-mutating function pass before every manual retry or other non-routi
 ```bash
 curl --fail-with-body \
   --request POST \
-  --header "Authorization: Bearer ${MODEL_PASS_OPERATOR_TOKEN}" \
+  --header "Authorization: Bearer ${MODEL_PASS_PHOTO_CLEANUP_TOKEN}" \
   --header "Content-Type: application/json" \
   --data '{"dryRun":true}' \
   "${MODEL_PASS_SUPABASE_URL}/functions/v1/cleanup-expired-photos"
@@ -80,13 +83,13 @@ Review unexpectedly high counts before continuing.
 
 ## Production Invocation
 
-Use a server-side secret source to set `MODEL_PASS_OPERATOR_TOKEN` and `MODEL_PASS_SUPABASE_URL` without printing either value.
+Use a server-side secret source to set `MODEL_PASS_PHOTO_CLEANUP_TOKEN` and `MODEL_PASS_SUPABASE_URL` without printing either value.
 Then invoke the mutating pass:
 
 ```bash
 curl --fail-with-body \
   --request POST \
-  --header "Authorization: Bearer ${MODEL_PASS_OPERATOR_TOKEN}" \
+  --header "Authorization: Bearer ${MODEL_PASS_PHOTO_CLEANUP_TOKEN}" \
   --header "Content-Type: application/json" \
   --data '{"dryRun":false}' \
   "${MODEL_PASS_SUPABASE_URL}/functions/v1/cleanup-expired-photos"

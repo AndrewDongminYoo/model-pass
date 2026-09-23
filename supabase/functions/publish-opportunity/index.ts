@@ -84,7 +84,6 @@ export interface OpportunityPublicationCommand {
   recruiterId: string;
   draft: OpportunityDraft;
   confirmedHardRuleIds: string[];
-  accessToken: string;
 }
 
 export interface OpportunityPublicationDependencies {
@@ -131,7 +130,6 @@ export function createPublishOpportunityHandler(
         recruiterId,
         draft: input.draft,
         confirmedHardRuleIds: input.confirmedHardRuleIds,
-        accessToken,
       });
       return jsonResponse(
         {
@@ -182,8 +180,12 @@ function readBearerToken(value: string | null): string | undefined {
 export function createSupabaseDependencies(
   supabaseUrl: string,
   anonKey: string,
+  serviceRoleKey: string,
 ): OpportunityPublicationDependencies {
   const authClient = createClient(supabaseUrl, anonKey, {
+    auth: { persistSession: false },
+  });
+  const persistenceClient = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
   return {
@@ -194,13 +196,7 @@ export function createSupabaseDependencies(
       return data.user.id;
     },
     async persistOpportunity(command) {
-      const client = createClient(supabaseUrl, anonKey, {
-        auth: { persistSession: false },
-        global: {
-          headers: { Authorization: `Bearer ${command.accessToken}` },
-        },
-      });
-      return insertOpportunity(client, command);
+      return insertOpportunity(persistenceClient, command);
     },
   };
 }
@@ -210,27 +206,28 @@ async function insertOpportunity(
   command: OpportunityPublicationCommand,
 ): Promise<string> {
   const { draft } = command;
-  const { data, error } = await client
-    .from("opportunities")
-    .insert({
-      recruiter_id: command.recruiterId,
-      category: draft.category,
-      title: draft.title,
-      starts_at: draft.startsAt,
-      closes_at: draft.closesAt,
-      venue_district: draft.venueDistrict,
-      expected_minutes: draft.expectedMinutes,
-      benefit: draft.benefit,
-      status: "published",
-      ruleset_id: draft.rulesetId,
-      ruleset_version: draft.rulesetVersion,
-      rules_snapshot: draft.rules,
-      confirmed_hard_rule_ids: command.confirmedHardRuleIds,
-    })
-    .select("id")
-    .single<{ id: string }>();
+  const { data, error } = await client.rpc(
+    "publish_opportunity_for_recruiter",
+    {
+      p_recruiter_id: command.recruiterId,
+      p_category: draft.category,
+      p_title: draft.title,
+      p_starts_at: draft.startsAt,
+      p_closes_at: draft.closesAt,
+      p_venue_district: draft.venueDistrict,
+      p_expected_minutes: draft.expectedMinutes,
+      p_benefit: draft.benefit,
+      p_ruleset_id: draft.rulesetId,
+      p_ruleset_version: draft.rulesetVersion,
+      p_rules_snapshot: draft.rules,
+      p_confirmed_hard_rule_ids: command.confirmedHardRuleIds,
+    },
+  );
   if (error !== null) throw error;
-  return data.id;
+  if (typeof data !== "string") {
+    throw new Error("Publication returned an invalid opportunity ID.");
+  }
+  return data;
 }
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -243,12 +240,13 @@ function jsonResponse(body: unknown, status: number): Response {
 if (import.meta.main) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-  if (supabaseUrl === undefined || anonKey === undefined) {
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !anonKey || !serviceRoleKey) {
     throw new Error("Supabase server environment is not configured.");
   }
   Deno.serve(
     createPublishOpportunityHandler(
-      createSupabaseDependencies(supabaseUrl, anonKey),
+      createSupabaseDependencies(supabaseUrl, anonKey, serviceRoleKey),
     ),
   );
 }

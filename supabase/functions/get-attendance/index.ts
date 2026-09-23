@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { attendanceAccessToken } from "../_shared/attendance-access.ts";
 import type {
   AttendanceEvent,
   AttendanceEventType,
@@ -24,6 +25,7 @@ interface AttendanceAccess {
   actor: AttendanceActor;
   startsAt: string;
   selected: boolean;
+  canUnselectBeforeAttendance: boolean;
 }
 
 export interface GetAttendanceDependencies {
@@ -62,7 +64,11 @@ export function createGetAttendanceHandler(
       const bearerToken = readBearerToken(request.headers.get("Authorization"));
       const access = await dependencies.resolveAccess(
         input,
-        bearerToken === platformAnonToken ? undefined : bearerToken,
+        attendanceAccessToken(
+          input.submissionAttemptId !== undefined,
+          bearerToken,
+          platformAnonToken,
+        ),
       );
       if (
         access === null ||
@@ -78,21 +84,24 @@ export function createGetAttendanceHandler(
             applicationId: input.applicationId,
             viewerParty: access.actor.party,
             selected: false,
+            canUnselect: false,
             allowedActions: [],
             events: [],
           },
           200,
         );
       }
-      const events = filterEvents(
-        await dependencies.loadEvents(input.applicationId),
-        access.actor.party,
-      );
+      const allEvents = await dependencies.loadEvents(input.applicationId);
+      const events = filterEvents(allEvents, access.actor.party);
       return jsonResponse(
         {
           applicationId: input.applicationId,
           viewerParty: access.actor.party,
           selected: true,
+          canUnselect:
+            access.actor.party === "recruiter" &&
+            access.canUnselectBeforeAttendance &&
+            allEvents.length === 0,
           allowedActions: allowedActions(
             access.actor.party,
             access.startsAt,
@@ -131,8 +140,8 @@ function allowedActions(
     ];
   }
   return party === "recruiter"
-    ? ["completed", "recruiter_cancelled", "applicant_no_show"]
-    : ["completed", "applicant_cancelled", "recruiter_no_show"];
+    ? ["completed", "applicant_no_show"]
+    : ["completed", "recruiter_no_show"];
 }
 
 function filterEvents(
@@ -304,7 +313,7 @@ export function createSupabaseDependencies(
 
       let applicationQuery = client
         .from("applications")
-        .select("id, selected_at")
+        .select("id, selected_at, selected_by")
         .eq("id", capability.applicationId)
         .eq("opportunity_id", capability.opportunityId)
         .eq("submission_state", "submitted");
@@ -318,13 +327,14 @@ export function createSupabaseDependencies(
         await applicationQuery.maybeSingle<{
           id: string;
           selected_at: string | null;
+          selected_by: string | null;
         }>();
       if (applicationError !== null) throw applicationError;
       if (application === null) return null;
 
       let opportunityQuery = client
         .from("opportunities")
-        .select("id, starts_at")
+        .select("id, starts_at, closes_at, closed_at, status")
         .eq("id", capability.opportunityId);
       if (actor.party === "recruiter") {
         opportunityQuery = opportunityQuery.eq("recruiter_id", actor.userId);
@@ -333,13 +343,25 @@ export function createSupabaseDependencies(
         await opportunityQuery.maybeSingle<{
           id: string;
           starts_at: string;
+          closes_at: string;
+          closed_at: string | null;
+          status: string;
         }>();
       if (opportunityError !== null) throw opportunityError;
       if (opportunity === null) return null;
+      const now = new Date();
       return {
         actor,
         startsAt: opportunity.starts_at,
         selected: application.selected_at !== null,
+        canUnselectBeforeAttendance:
+          actor.party === "recruiter" &&
+          application.selected_at !== null &&
+          application.selected_by === actor.userId &&
+          opportunity.status === "published" &&
+          opportunity.closed_at === null &&
+          new Date(opportunity.closes_at) > now &&
+          new Date(opportunity.starts_at) > now,
       };
     },
     async loadEvents(applicationId) {

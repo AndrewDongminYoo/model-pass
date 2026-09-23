@@ -1,13 +1,15 @@
 import {
-  PhotoFinalizationRejectedError,
-  PhotoUploadError,
   createPhotoUploadHandler,
   createSupabaseDependencies,
-  validatePhotoUploadSigningSecret,
   type PhotoApplication,
+  PhotoFinalizationRejectedError,
   type PhotoMetadata,
   type PhotoUploadDependencies,
+  PhotoUploadError,
+  sanitizeUploadedPhoto,
+  validatePhotoUploadSigningSecret,
 } from "./index.ts";
+import { MagickImageInfo } from "@imagemagick/magick-wasm";
 
 type TestFunction = () => void | Promise<void>;
 type TestRegistrar = (name: string, testFunction: TestFunction) => void;
@@ -23,6 +25,183 @@ const submissionAttemptId = "00000000-0000-4000-8000-000000000201";
 const photoId = "00000000-0000-4000-8000-000000000301";
 const now = new Date("2026-09-22T03:00:00.000Z");
 const functionUrl = "http://localhost/functions/v1/create-photo-upload";
+const pngWithLocation = Uint8Array.from(
+  atob(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAADUExURf8AABniCTcAAAAHdElNRQfqCRcAOxHt11DZAAAAHnRFWHRjb21tZW50AEdQUz1wcml2YXRlLWNvb3JkaW5hdGXpXICZAAAAJXRFWHRkYXRlOmNyZWF0ZQAyMDI2LTA5LTIzVDAwOjU5OjE3KzAwOjAw2ZU8AgAAACV0RVh0ZGF0ZTptb2RpZnkAMjAyNi0wOS0yM1QwMDo1OToxNyswMDowMKjIhL4AAAAodEVYdGRhdGU6dGltZXN0YW1wADIwMjYtMDktMjNUMDA6NTk6MTcrMDA6MDD/3aVhAAAACklEQVQI12NgAAAAAgAB4iG8MwAAAABJRU5ErkJggg==",
+  ),
+  (character) => character.charCodeAt(0),
+);
+const jpegWithOrientation = Uint8Array.from(
+  atob(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCAADAAIBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABkQAAMBAQEAAAAAAAAAAAAAAAECBQMEAP/aAAgBAQAAPwBSJMmVAlcUKFM5J02dz58nHx8mK44c2Gahc8s81AVEVQFCgAAAAe//2Q==",
+  ),
+  (character) => character.charCodeAt(0),
+);
+const orientationExif = Uint8Array.from([
+  255, 225, 0, 34, 69, 120, 105, 102, 0, 0, 73, 73, 42, 0, 8, 0, 0, 0, 1, 0, 18,
+  1, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+registerTest(
+  "rejects oversized dimensions before decoding pixel data",
+  async () => {
+    const oversized = Uint8Array.from(pngWithLocation);
+    new DataView(oversized.buffer).setUint32(16, 4001);
+    new DataView(oversized.buffer).setUint32(20, 4000);
+    let crc = 0xffffffff;
+    for (const byte of oversized.subarray(12, 29)) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) {
+        crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+      }
+    }
+    new DataView(oversized.buffer).setUint32(29, (crc ^ 0xffffffff) >>> 0);
+
+    let rejection: unknown;
+    try {
+      await sanitizeUploadedPhoto(oversized, "image/png");
+    } catch (error) {
+      rejection = error;
+    }
+    assertEquals(rejection instanceof PhotoUploadError, true);
+    assertEquals(
+      (rejection as Error).message,
+      "Photo format or dimensions are invalid.",
+    );
+  },
+);
+
+registerTest("applies camera orientation before removing EXIF", async () => {
+  const oriented = new Uint8Array(
+    jpegWithOrientation.length + orientationExif.length,
+  );
+  oriented.set(jpegWithOrientation.subarray(0, 2));
+  oriented.set(orientationExif, 2);
+  oriented.set(jpegWithOrientation.subarray(2), 2 + orientationExif.length);
+
+  const cleaned = await sanitizeUploadedPhoto(oriented, "image/jpeg");
+  const info = MagickImageInfo.create(cleaned);
+  assertEquals([info.width, info.height, info.orientation], [3, 2, 0]);
+  assertEquals(new TextDecoder().decode(cleaned).includes("Exif"), false);
+});
+
+registerTest(
+  "includes the image decoder in the hosted function bundle",
+  async () => {
+    const config = await Deno.readTextFile(
+      new URL("../../config.toml", import.meta.url),
+    );
+    const asset = await Deno.readFile(
+      new URL("./magick.wasm", import.meta.url),
+    );
+    assertEquals(
+      /\[functions\.create-photo-upload\][^[]*static_files\s*=\s*\["\.\/functions\/create-photo-upload\/magick\.wasm"\]/s.test(
+        config,
+      ),
+      true,
+    );
+    assertEquals(asset.length > 0 && asset.length < 20 * 1024 * 1024, true);
+  },
+);
+
+registerTest(
+  "re-encodes a photo without embedded metadata and rejects a spoofed MIME type",
+  async () => {
+    const cleaned = await sanitizeUploadedPhoto(pngWithLocation, "image/png");
+    assertEquals(Array.from(cleaned.slice(0, 3)), [255, 216, 255]);
+    assertEquals(
+      new TextDecoder().decode(cleaned).includes("private-coordinate"),
+      false,
+    );
+
+    let rejected = false;
+    try {
+      await sanitizeUploadedPhoto(pngWithLocation, "image/jpeg");
+    } catch (error) {
+      rejected = error instanceof PhotoUploadError && error.status === 415;
+    }
+    assertEquals(rejected, true);
+  },
+);
+
+registerTest(
+  "stores only the re-encoded image and its actual byte count",
+  async () => {
+    const fixture = createFixture({ sanitizePhoto: sanitizeUploadedPhoto });
+    const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+    const grant = (await readJson(
+      await issueGrant(handler, {
+        ...validGrantRequest(),
+        contentType: "image/png",
+        byteSize: pngWithLocation.length,
+      }),
+    )) as { uploadUrl: string; storagePath: string };
+
+    const response = await upload(handler, grant, pngWithLocation, "image/png");
+
+    assertEquals(response.status, 201);
+    assertEquals(fixture.uploads[0]?.contentType, "image/jpeg");
+    assertEquals(
+      Array.from(fixture.uploads[0]?.body.slice(0, 3) ?? []),
+      [255, 216, 255],
+    );
+    assertEquals(
+      fixture.metadata[0]?.byteSize,
+      fixture.uploads[0]?.body.length,
+    );
+    assertEquals(fixture.reservationUpdates, [fixture.uploads[0]?.body.length]);
+    assertEquals(fixture.metadata[0]?.contentType, "image/jpeg");
+  },
+);
+
+registerTest(
+  "claims an upload grant before decoding and cannot replay it",
+  async () => {
+    let sanitizeCalls = 0;
+    const fixture = createFixture({
+      sanitizePhoto: () => {
+        sanitizeCalls += 1;
+        throw new PhotoUploadError("Photo could not be decoded.", 415);
+      },
+    });
+    const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+    const grant = (await readJson(
+      await issueGrant(handler, validGrantRequest()),
+    )) as { uploadUrl: string; storagePath: string };
+
+    const first = await upload(handler, grant, bytes(3), "image/jpeg");
+    const replay = await upload(handler, grant, bytes(3), "image/jpeg");
+
+    assertEquals(first.status, 415);
+    assertEquals(replay.status, 409);
+    assertEquals(sanitizeCalls, 1);
+    assertEquals(fixture.reservations, [expectedPath()]);
+    assertEquals(fixture.uploads.length, 0);
+  },
+);
+
+registerTest("keeps a failed storage upload grant spent", async () => {
+  let sanitizeCalls = 0;
+  const fixture = createFixture({
+    storageFailure: true,
+    sanitizePhoto: (body) => {
+      sanitizeCalls += 1;
+      return Promise.resolve(body);
+    },
+  });
+  const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+  const grant = (await readJson(
+    await issueGrant(handler, validGrantRequest()),
+  )) as { uploadUrl: string; storagePath: string };
+
+  const first = await upload(handler, grant, bytes(3), "image/jpeg");
+  const replay = await upload(handler, grant, bytes(3), "image/jpeg");
+
+  assertEquals(first.status, 500);
+  assertEquals(replay.status, 409);
+  assertEquals(sanitizeCalls, 1);
+  assertEquals(fixture.reservations, [expectedPath()]);
+});
 
 registerTest(
   "issues an upload grant only for the exact completed application tuple",
@@ -164,7 +343,6 @@ registerTest(
       storagePath: expectedPath(),
       contentType: "image/jpeg",
       byteSize: 3,
-      expiresAt: "2026-10-30T03:00:00.000Z",
     };
     for (const { code, status } of [
       { code: "22023", status: 400 },
@@ -314,6 +492,17 @@ registerTest("rejects grant minting after the opportunity closes", async () => {
   );
 
   assertEquals(response.status, 409);
+  assertEquals(fixture.uploads.length, 0);
+});
+
+registerTest("rejects an exhausted anonymous photo grant quota", async () => {
+  const fixture = createFixture({ quotaAllowed: false });
+  const response = await issueGrant(
+    createPhotoUploadHandler(fixture.dependencies, functionUrl),
+    validGrantRequest(),
+  );
+
+  assertEquals(response.status, 429);
   assertEquals(fixture.uploads.length, 0);
 });
 
@@ -519,7 +708,7 @@ registerTest(
     const response = await upload(handler, grant, bytes(3), "image/jpeg");
 
     assertEquals(response.status, 201);
-    assertEquals(fixture.metadata[0]?.expiresAt, "2026-10-31T03:00:00.000Z");
+    assertEquals(fixture.metadata.length, 1);
     assertEquals(fixture.getApplicationLoadCount(), 3);
   },
 );
@@ -546,7 +735,6 @@ registerTest(
       storagePath: expectedPath(),
       contentType: "image/jpeg",
       byteSize: 3,
-      expiresAt: "2026-10-30T03:00:00.000Z",
     });
     assertEquals(await readJson(response), {
       applicationId,
@@ -570,13 +758,8 @@ registerTest(
 
     assertEquals(response.status, 500);
     assertEquals(fixture.removals, [expectedPath()]);
-    assertEquals(fixture.events, [
-      "reserve",
-      "storage",
-      "finalize",
-      "remove",
-      "release",
-    ]);
+    assertEquals(fixture.events, ["reserve", "storage", "finalize", "remove"]);
+    assertEquals(fixture.reservations, [expectedPath()]);
   },
 );
 
@@ -704,6 +887,7 @@ function createFixture(
     closesAtAfterStorage?: string;
     metadataFailure?: boolean;
     removalFailure?: boolean;
+    storageFailure?: boolean;
     photoRequired?: boolean;
     submissionState?: "pending_photo" | "submitted";
     completedPhotoId?: string;
@@ -711,6 +895,8 @@ function createFixture(
     finalizationAlwaysAmbiguous?: boolean;
     malformedFinalizationResult?: boolean;
     closed?: boolean;
+    quotaAllowed?: boolean;
+    sanitizePhoto?: PhotoUploadDependencies["sanitizePhoto"];
   } = {},
 ) {
   let currentTime = now;
@@ -734,12 +920,15 @@ function createFixture(
   const metadata: PhotoMetadata[] = [];
   const removals: string[] = [];
   const reservations: string[] = [];
+  const reservationUpdates: number[] = [];
   const events: string[] = [];
   const storedPaths = new Set<string>();
   const dependencies: PhotoUploadDependencies = {
     now: () => currentTime,
     createPhotoId: () => photoId,
     signingSecret: "test-signing-secret-with-sufficient-length",
+    consumeQuota: () => Promise.resolve(options.quotaAllowed ?? true),
+    sanitizePhoto: options.sanitizePhoto ?? ((body) => Promise.resolve(body)),
     async loadApplication(input) {
       applicationLoadCount += 1;
       if (
@@ -752,10 +941,22 @@ function createFixture(
       return application;
     },
     async reserveUpload(value) {
+      if (reservations.includes(value.storagePath)) {
+        throw new PhotoUploadError("This photo upload was already used.", 409);
+      }
       events.push("reserve");
       reservations.push(value.storagePath);
     },
+    async updateReservation(value) {
+      if (!reservations.includes(value.storagePath)) {
+        throw new Error("Photo upload reservation is missing.");
+      }
+      reservationUpdates.push(value.byteSize);
+    },
     async uploadObject(path, body, contentType, uploadOptions) {
+      if (options.storageFailure) {
+        throw new Error("Storage unavailable.");
+      }
       if (storedPaths.has(path)) {
         throw new PhotoUploadError("This photo was already uploaded.", 409);
       }
@@ -817,13 +1018,6 @@ function createFixture(
       storedPaths.delete(path);
       removals.push(path);
     },
-    async releaseReservation(value) {
-      events.push("release");
-      const index = reservations.indexOf(value);
-      if (index >= 0) {
-        reservations.splice(index, 1);
-      }
-    },
     async loadCompletedPhoto(input) {
       if (
         options.completedPhotoId !== undefined &&
@@ -846,6 +1040,7 @@ function createFixture(
     metadata,
     removals,
     reservations,
+    reservationUpdates,
     uploads,
     closeOpportunity(closedAt: string) {
       application.closedAt = closedAt;
@@ -913,7 +1108,10 @@ function issueGrant(
   return handler(
     new Request(functionUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "X-Forwarded-For": "192.0.2.10",
+      },
       body: JSON.stringify(body),
     }),
   );
@@ -982,7 +1180,9 @@ function assert(condition: unknown, message = "Expected condition to be true") {
 function assertEquals(actual: unknown, expected: unknown) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(
-      `Expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+      `Expected ${JSON.stringify(expected)}, received ${JSON.stringify(
+        actual,
+      )}`,
     );
   }
 }

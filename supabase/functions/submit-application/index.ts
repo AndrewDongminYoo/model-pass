@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { hashAnonymousRequestSource } from "../_shared/anonymous-quota.ts";
 import type {
   EvaluationResult,
   RuleDefinition,
@@ -64,6 +65,11 @@ export interface SubmissionIntent {
 
 export interface SubmissionDependencies {
   now: () => Date;
+  consumeQuota: (
+    opportunityId: string,
+    sourceHash: string,
+    submissionAttemptId: string,
+  ) => Promise<boolean>;
   loadExistingAttempt: (
     opportunityId: string,
     submissionAttemptId: string,
@@ -100,6 +106,8 @@ const corsHeaders = {
   "Content-Type": "application/json",
 };
 
+const maximumSubmissionBytes = 262_144;
+
 export class SubmissionError extends Error {
   constructor(
     message: string,
@@ -114,6 +122,7 @@ export class SubmissionError extends Error {
 export async function submitApplication(
   input: unknown,
   dependencies: SubmissionDependencies,
+  sourceHash = "",
 ): Promise<ApplicationSubmissionResult> {
   const parsedInput = parseSubmitApplicationInput(input);
   const submissionIntent: SubmissionIntent = {
@@ -197,6 +206,19 @@ export async function submitApplication(
       "The application does not satisfy this opportunity's rules.",
       422,
       evaluation,
+    );
+  }
+
+  if (
+    !(await dependencies.consumeQuota(
+      opportunity.id,
+      sourceHash,
+      parsedInput.submissionAttemptId,
+    ))
+  ) {
+    throw new SubmissionError(
+      "Too many applications for this opportunity. Please try again later.",
+      429,
     );
   }
 
@@ -335,6 +357,21 @@ export function createSupabaseDependencies(
 ): SubmissionDependencies {
   return {
     now: () => new Date(),
+    async consumeQuota(opportunityId, sourceHash, submissionAttemptId) {
+      const { data, error } = await client.rpc(
+        "consume_anonymous_submission_quota",
+        {
+          p_opportunity_id: opportunityId,
+          p_source_hash: sourceHash,
+          p_limit: 10,
+          p_submission_attempt_id: submissionAttemptId,
+        },
+      );
+      if (error !== null || typeof data !== "boolean") {
+        throw new Error("Failed to check anonymous submission quota.");
+      }
+      return data;
+    },
     async loadExistingAttempt(opportunityId, submissionAttemptId) {
       const { data, error } = await client
         .from("applications")
@@ -458,6 +495,7 @@ function parseSubmissionState(
 
 export function createSubmitApplicationHandler(
   dependencies: SubmissionDependencies,
+  quotaSecret: string,
 ) {
   return async (request: Request): Promise<Response> => {
     if (request.method === "OPTIONS") {
@@ -468,10 +506,12 @@ export function createSubmitApplicationHandler(
     }
 
     try {
-      const result = await submitApplication(
-        await request.json(),
-        dependencies,
-      );
+      const input = await readBoundedSubmission(request);
+      const sourceHash = await hashAnonymousRequestSource(request, quotaSecret);
+      if (sourceHash === null) {
+        return jsonResponse({ error: "Request source is unavailable." }, 503);
+      }
+      const result = await submitApplication(input, dependencies, sourceHash);
       return jsonResponse(result, 201);
     } catch (error) {
       if (error instanceof SubmissionError) {
@@ -488,6 +528,45 @@ export function createSubmitApplicationHandler(
       return jsonResponse({ error: "Unable to submit the application." }, 500);
     }
   };
+}
+
+async function readBoundedSubmission(request: Request): Promise<unknown> {
+  const declaredLength = request.headers.get("Content-Length");
+  if (declaredLength !== null) {
+    if (!/^(0|[1-9][0-9]*)$/.test(declaredLength)) {
+      throw new SubmissionError("Invalid Content-Length header.", 400);
+    }
+    if (Number(declaredLength) > maximumSubmissionBytes) {
+      throw new SubmissionError("Application payload is too large.", 413);
+    }
+  }
+
+  if (request.body === null) {
+    throw new SyntaxError("Empty application payload.");
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    totalBytes += value.byteLength;
+    if (totalBytes > maximumSubmissionBytes) {
+      await reader.cancel();
+      throw new SubmissionError("Application payload is too large.", 413);
+    }
+    chunks.push(value);
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(body));
 }
 
 function isZodError(error: unknown): boolean {
@@ -512,6 +591,9 @@ if (import.meta.main) {
     auth: { persistSession: false },
   });
   Deno.serve(
-    createSubmitApplicationHandler(createSupabaseDependencies(client)),
+    createSubmitApplicationHandler(
+      createSupabaseDependencies(client),
+      serviceRoleKey,
+    ),
   );
 }

@@ -20,6 +20,7 @@ export interface AttendanceStatus {
   applicationId: string;
   viewerParty: AttendanceParty;
   selected: boolean;
+  canUnselect: boolean;
   allowedActions: AttendanceEventType[];
   events: AttendanceEvent[];
 }
@@ -27,6 +28,10 @@ export interface AttendanceStatus {
 export interface ApplicationSelection {
   applicationId: string;
   selectedAt: string;
+}
+
+export interface ApplicationUnselection {
+  applicationId: string;
 }
 
 export interface RecordAttendanceInput extends AttendanceCapability {
@@ -73,6 +78,27 @@ export async function selectApplication(
     throw new Error("The selection response is invalid.");
   }
   return data;
+}
+
+export async function unselectApplication(
+  capability: Pick<AttendanceCapability, "applicationId" | "opportunityId">,
+): Promise<ApplicationUnselection> {
+  const { data, error } = await getSupabaseClient().functions.invoke(
+    "select-application",
+    { body: { ...capabilityBody(capability), action: "unselect" } },
+  );
+  if (error !== null) {
+    throw (await parseAttendanceHttpError(error)) ?? error;
+  }
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    (data as { applicationId?: unknown }).applicationId !==
+      capability.applicationId
+  ) {
+    throw new Error("The selection reversal response is invalid.");
+  }
+  return data as ApplicationUnselection;
 }
 
 export async function recordAttendance(
@@ -149,6 +175,7 @@ function isAttendanceStatus(
     result.applicationId === expectedApplicationId &&
     isParty(result.viewerParty) &&
     typeof result.selected === "boolean" &&
+    typeof result.canUnselect === "boolean" &&
     Array.isArray(result.allowedActions) &&
     result.allowedActions.every(isEventType) &&
     Array.isArray(result.events) &&

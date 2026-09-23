@@ -17,6 +17,7 @@ const {
   createPhotoViewUrlMock,
   getAttendanceMock,
   getRecruiterApplicationsMock,
+  getRecruiterOpportunityStateMock,
   submitApplicationMock,
   supabaseClientMock,
   uploadApplicationPhotoMock,
@@ -24,6 +25,7 @@ const {
   createPhotoViewUrlMock: vi.fn(),
   getAttendanceMock: vi.fn(),
   getRecruiterApplicationsMock: vi.fn(),
+  getRecruiterOpportunityStateMock: vi.fn(),
   submitApplicationMock: vi.fn(),
   supabaseClientMock: {
     auth: {
@@ -66,12 +68,27 @@ vi.mock("../../applications/api/submit-application", async (importOriginal) => {
   return { ...original, submitApplication: submitApplicationMock };
 });
 
+vi.mock("../../opportunities/api/close-opportunity", async (importOriginal) => {
+  const original =
+    await importOriginal<
+      typeof import("../../opportunities/api/close-opportunity")
+    >();
+  return {
+    ...original,
+    getRecruiterOpportunityState: getRecruiterOpportunityStateMock,
+  };
+});
+
 const opportunityId = "00000000-0000-4000-8000-000000000001";
 const applicationId = "00000000-0000-4000-8000-000000000101";
 const photoId = "00000000-0000-4000-8000-000000000301";
 
 beforeEach(() => {
   getAttendanceMock.mockImplementation(() => new Promise(() => undefined));
+  getRecruiterOpportunityStateMock.mockResolvedValue({
+    status: "published",
+    canSelect: true,
+  });
   supabaseClientMock.auth.getSession.mockResolvedValue({
     data: {
       session: {
@@ -463,6 +480,31 @@ it("renders an authentication error instead of an anonymous empty state", async 
   expect(
     screen.queryByText("아직 지원 내역이 없습니다."),
   ).not.toBeInTheDocument();
+});
+
+it("localizes a recruiter application load failure in English", async () => {
+  localStorage.setItem("model-pass-locale", "en");
+  getRecruiterApplicationsMock.mockRejectedValue(new Error("network failure"));
+  render(
+    <I18nProvider>
+      <MemoryRouter
+        initialEntries={[
+          `/recruiter/opportunities/${opportunityId}/applications`,
+        ]}
+      >
+        <Routes>
+          <Route
+            path="/recruiter/opportunities/:opportunityId/applications"
+            element={<ApplicationsPage />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </I18nProvider>,
+  );
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Could not load applications.",
+  );
 });
 
 it("exposes the recruiter applications route", async () => {

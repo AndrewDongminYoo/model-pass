@@ -78,7 +78,8 @@ test("blocks a makeup hard failure while keeping lenses as a removable reminder"
   await expect(
     page.getByRole("heading", { name: "Application received" }),
   ).toBeVisible();
-  await expect(page.getByText(/^Receipt: /)).toBeVisible();
+  await expect(page.getByText(/^Application ID: /)).toBeVisible();
+  await expect(page.getByText(/^Private management code: /)).toBeVisible();
 });
 
 async function choose(

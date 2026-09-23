@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(20);
+select plan(26);
 
 insert into auth.users (id, aud, role, email, encrypted_password)
 values (
@@ -205,6 +205,41 @@ select is(
   false,
   'clients cannot consume idempotent submission quota directly'
 );
+
+insert into public.anonymous_request_quota (
+  opportunity_id, action, source_hash, bucket_start, request_count
+) values (
+  '60000000-0000-4000-8000-000000000011',
+  'submit_application', repeat('d', 64),
+  date_trunc('hour', now()) - interval '24 hours', 1
+), (
+  '60000000-0000-4000-8000-000000000011',
+  'submit_application', repeat('e', 64),
+  date_trunc('hour', now()) - interval '23 hours', 1
+);
+
+select is(public.delete_expired_anonymous_request_quota(now()), 1,
+  'scheduled cleanup deletes a quota bucket at its 24-hour boundary');
+
+select is((select count(*)::integer from public.anonymous_request_quota
+  where source_hash = repeat('d', 64)), 0,
+  'the expired source hash is removed without another anonymous request');
+
+select is((select count(*)::integer from public.anonymous_request_quota
+  where source_hash = repeat('b', 64)), 1,
+  'scheduled cleanup preserves the current quota bucket');
+
+select is((select count(*)::integer from public.anonymous_request_quota
+  where source_hash = repeat('e', 64)), 1,
+  'scheduled cleanup preserves the bucket before its 24-hour boundary');
+
+select is(has_function_privilege('authenticated',
+  'public.delete_expired_anonymous_request_quota(timestamptz)', 'execute'), false,
+  'clients cannot invoke quota cleanup');
+
+select is(has_function_privilege('service_role',
+  'public.delete_expired_anonymous_request_quota(timestamptz)', 'execute'), true,
+  'the scheduled service can invoke quota cleanup');
 
 select * from finish();
 

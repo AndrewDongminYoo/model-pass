@@ -2,14 +2,15 @@
 
 ## Scope
 
-The `cleanup-expired-photos` function removes expired job-scoped photos, reconciles stale upload reservations, and deletes abandoned `pending_photo` drafts after an opportunity closes.
+The `cleanup-expired-photos` function removes expired job-scoped photos, reconciles stale upload reservations, deletes abandoned `pending_photo` drafts after an opportunity closes, and expires IP-derived anonymous quota hashes.
 The function does not delete submitted applications.
 Invoke it only with the dedicated `PHOTO_CLEANUP_TOKEN` bearer.
 Never place this token or the database service-role key in client code, logs, or documentation.
 
 ## Scheduled Execution
 
-GitHub Actions runs [photo-retention-cleanup.yml](../../.github/workflows/photo-retention-cleanup.yml) every day at 03:17 UTC and supports an operator-initiated `workflow_dispatch` run.
+GitHub Actions runs [photo-retention-cleanup.yml](../../.github/workflows/photo-retention-cleanup.yml) hourly at minute 17 UTC and supports an operator-initiated `workflow_dispatch` run.
+The hourly invocation expires quota buckets after their 24-hour boundary even when no new anonymous request arrives; delayed or failed scheduled runs require operator follow-up.
 The workflow sends exactly `{"dryRun":false}` to the cleanup function.
 It has no GitHub token permissions and permits one active cleanup run at a time; queued runs do not cancel an in-progress cleanup.
 The workflow reads only the `MODEL_PASS_SUPABASE_URL` and `MODEL_PASS_PHOTO_CLEANUP_TOKEN` repository secrets.
@@ -38,6 +39,7 @@ One invocation uses this order:
 6. Recheck that the exact reservation still exists and matching photo metadata is still absent while holding the application lock.
 7. Remove the exact Storage object, then delete only the reservation with the matching invocation claim.
 8. Delete closed or scheduled-closed `pending_photo` drafts only when no reservation or photo metadata remains.
+9. Delete anonymous quota buckets at or past their 24-hour boundary, without relying on another anonymous request.
 
 For a stale reservation with exact photo metadata, cleanup removes only the reservation.
 For a stale reservation without exact photo metadata, cleanup removes the exact Storage object before it removes the reservation.

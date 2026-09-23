@@ -134,6 +134,44 @@ registerTest(
 );
 
 registerTest(
+  "scheduled cleanup removes expired quotas only in live runs",
+  async () => {
+    const calls: string[] = [];
+    const dependencies = emptyDependencies({
+      deleteExpiredQuotas: (now) => {
+        calls.push(now);
+        return Promise.resolve();
+      },
+    });
+
+    await cleanupExpiredPhotos(true, dependencies);
+    assertEquals(calls, []);
+    await cleanupExpiredPhotos(false, dependencies);
+    assertEquals(calls, ["2026-09-22T00:00:00.000Z"]);
+  },
+);
+
+registerTest("quota cleanup uses its service-role RPC", async () => {
+  const calls: unknown[] = [];
+  const client = {
+    rpc: (name: string, args: unknown) => {
+      calls.push({ name, args });
+      return Promise.resolve({ data: 2, error: null });
+    },
+  };
+  const dependencies = createSupabaseDependencies(client as never, "secret");
+
+  await dependencies.deleteExpiredQuotas("2026-09-22T00:00:00.000Z");
+
+  assertEquals(calls, [
+    {
+      name: "delete_expired_anonymous_request_quota",
+      args: { p_now: "2026-09-22T00:00:00.000Z" },
+    },
+  ]);
+});
+
+registerTest(
   "reports a metadata failure without claiming deletion",
   async () => {
     // Production break: a failed metadata write after object removal must remain visible for recovery and retry.
@@ -542,6 +580,7 @@ function emptyDependencies(
     countPendingDrafts: () => Promise.resolve(0),
     countProjectedPendingDrafts: () => Promise.resolve(0),
     deletePendingDrafts: () => Promise.resolve(0),
+    deleteExpiredQuotas: () => Promise.resolve(),
     reportError: () => undefined,
     ...overrides,
   };

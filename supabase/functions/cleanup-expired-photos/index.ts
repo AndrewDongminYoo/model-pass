@@ -59,6 +59,7 @@ export interface CleanupDependencies {
   countPendingDrafts: (now: string) => Promise<number>;
   countProjectedPendingDrafts: (now: string) => Promise<number>;
   deletePendingDrafts: (now: string) => Promise<number>;
+  deleteExpiredQuotas: (now: string) => Promise<void>;
   reportError: (message: string, error: unknown) => void;
 }
 
@@ -243,6 +244,7 @@ export async function cleanupExpiredPhotos(
   }
 
   result.pendingDrafts.deleted = await dependencies.deletePendingDrafts(now);
+  await dependencies.deleteExpiredQuotas(now);
   return result;
 }
 
@@ -541,6 +543,13 @@ export function createSupabaseDependencies(
       );
       if (error !== null) throw error;
       return Number(data);
+    },
+    async deleteExpiredQuotas(now) {
+      const { error } = await client.rpc(
+        "delete_expired_anonymous_request_quota",
+        { p_now: now },
+      );
+      if (error !== null) throw error;
     },
     reportError(message, error) {
       console.error(message, error);

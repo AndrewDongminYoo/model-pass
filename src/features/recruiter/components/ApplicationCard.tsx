@@ -15,9 +15,13 @@ import { localizedRuleReason } from "../../eligibility/presentation/ko";
 
 interface ApplicationCardProps {
   application: RecruiterApplication;
+  selectionAllowed?: boolean;
 }
 
-export function ApplicationCard({ application }: ApplicationCardProps) {
+export function ApplicationCard({
+  application,
+  selectionAllowed = true,
+}: ApplicationCardProps) {
   const { locale, t } = useI18n();
   const { opportunityId } = useParams<{ opportunityId: string }>();
   const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
@@ -51,7 +55,8 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
   }
 
   async function select() {
-    if (opportunityId === undefined || selectionPending) return;
+    if (opportunityId === undefined || selectionPending || !selectionAllowed)
+      return;
     setSelectionPending(true);
     setSelectionError(null);
     try {
@@ -66,7 +71,8 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
   }
 
   async function unselect() {
-    if (opportunityId === undefined || selectionPending) return;
+    if (opportunityId === undefined || selectionPending || !selectionAllowed)
+      return;
     setSelectionPending(true);
     setSelectionError(null);
     try {
@@ -213,7 +219,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
         />
       ) : (
         <>
-          {selected === false ? (
+          {selectionAllowed && selected === false ? (
             <div className="detail-section">
               <button
                 type="button"
@@ -226,7 +232,7 @@ export function ApplicationCard({ application }: ApplicationCardProps) {
               </button>
             </div>
           ) : null}
-          {selected === true && canUnselect ? (
+          {selectionAllowed && selected === true && canUnselect ? (
             <div className="detail-section">
               <button
                 className="button--secondary"

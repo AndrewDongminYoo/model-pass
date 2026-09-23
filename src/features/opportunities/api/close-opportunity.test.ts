@@ -1,10 +1,20 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { closeOpportunity } from "./close-opportunity";
+import {
+  closeOpportunity,
+  getRecruiterOpportunityState,
+} from "./close-opportunity";
 
-const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
+const { invokeMock, fromMock, maybeSingleMock } = vi.hoisted(() => ({
+  invokeMock: vi.fn(),
+  fromMock: vi.fn(),
+  maybeSingleMock: vi.fn(),
+}));
 
 vi.mock("../../../lib/supabase/client", () => ({
-  getSupabaseClient: () => ({ functions: { invoke: invokeMock } }),
+  getSupabaseClient: () => ({
+    functions: { invoke: invokeMock },
+    from: fromMock,
+  }),
 }));
 
 afterEach(() => vi.clearAllMocks());
@@ -25,4 +35,27 @@ it("requests a server-controlled closure without a caller-supplied recruiter id"
   expect(invokeMock).toHaveBeenCalledWith("close-opportunity", {
     body: { opportunityId },
   });
+});
+
+it("reads the owned opportunity state before offering selection", async () => {
+  const opportunityId = "00000000-0000-4000-8000-000000000011";
+  const eqMock = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
+  const selectMock = vi.fn(() => ({ eq: eqMock }));
+  fromMock.mockReturnValue({ select: selectMock });
+  maybeSingleMock.mockResolvedValue({
+    data: {
+      status: "closed",
+      closed_at: "2026-09-23T01:00:00.000Z",
+      closes_at: "2099-09-24T01:00:00.000Z",
+      starts_at: "2099-09-25T01:00:00.000Z",
+    },
+    error: null,
+  });
+
+  await expect(getRecruiterOpportunityState(opportunityId)).resolves.toEqual({
+    status: "closed",
+    canSelect: false,
+  });
+  expect(fromMock).toHaveBeenCalledWith("opportunities");
+  expect(eqMock).toHaveBeenCalledWith("id", opportunityId);
 });

@@ -8,7 +8,11 @@ import {
 import { ApplicationCard } from "../components/ApplicationCard";
 import { appNameFor } from "../../../i18n/brand";
 import { useI18n } from "../../../i18n/locale";
-import { closeOpportunity } from "../../opportunities/api/close-opportunity";
+import {
+  closeOpportunity,
+  getRecruiterOpportunityState,
+  type RecruiterOpportunityState,
+} from "../../opportunities/api/close-opportunity";
 
 export function ApplicationsPage() {
   const { locale, t } = useI18n();
@@ -16,6 +20,7 @@ export function ApplicationsPage() {
   const [result, setResult] = useState<{
     opportunityId: string;
     applications?: RecruiterApplication[];
+    opportunityState?: RecruiterOpportunityState;
     error?: "authentication" | "load";
   }>();
   const [closure, setClosure] = useState<{
@@ -42,11 +47,15 @@ export function ApplicationsPage() {
       };
     }
 
-    void getRecruiterApplications(opportunityId)
-      .then((loaded) => {
+    void Promise.all([
+      getRecruiterApplications(opportunityId),
+      getRecruiterOpportunityState(opportunityId),
+    ])
+      .then(([loaded, opportunityState]) => {
         if (active) {
           setResult({
             opportunityId,
+            opportunityState,
             applications: [...loaded].sort(
               (left, right) =>
                 left.createdAt.localeCompare(right.createdAt) ||
@@ -93,6 +102,13 @@ export function ApplicationsPage() {
     closure !== undefined && closure.opportunityId === opportunityId
       ? closure.status
       : undefined;
+  const isClosed =
+    closureStatus === "closed" ||
+    currentResult?.opportunityState?.status === "closed";
+  const selectionAllowed =
+    currentResult?.opportunityState?.canSelect === true &&
+    closureStatus !== "pending" &&
+    closureStatus !== "closed";
 
   return (
     <main className="app-shell">
@@ -113,7 +129,7 @@ export function ApplicationsPage() {
           className="detail-section"
           aria-label={t("Opportunity closure", "공고 마감")}
         >
-          {closureStatus === "closed" ? (
+          {isClosed ? (
             <p role="status">
               {t("The opportunity is closed.", "공고가 마감되었습니다.")}
             </p>
@@ -174,7 +190,11 @@ export function ApplicationsPage() {
         <p>{t("No applications yet.", "아직 지원 내역이 없습니다.")}</p>
       ) : null}
       {applications?.map((application) => (
-        <ApplicationCard key={application.id} application={application} />
+        <ApplicationCard
+          key={application.id}
+          application={application}
+          selectionAllowed={selectionAllowed}
+        />
       ))}
     </main>
   );

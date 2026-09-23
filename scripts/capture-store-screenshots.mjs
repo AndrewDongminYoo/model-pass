@@ -7,7 +7,7 @@ const opportunityId = "00000000-0000-4000-8000-000000000001";
 const opportunity = {
   id: opportunityId,
   category: "makeup_certification",
-  title: "메이크업 국가자격 실기시험 모델",
+  title: "메이크업 실기시험 모델 예시 공고",
   startsAt: "2026-10-15T10:00:00+09:00",
   closesAt: "2026-10-12T18:00:00+09:00",
   venueDistrict: "서울 강남구",
@@ -15,7 +15,7 @@ const opportunity = {
   benefit: {
     type: "cash",
     amount: 80000,
-    description: "시험 종료 후 현금 지급",
+    description: "예시 금액, 시험 종료 후 지급",
   },
   rulesetId: "makeup-certification",
   rulesetVersion: 1,

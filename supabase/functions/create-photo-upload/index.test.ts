@@ -149,9 +149,59 @@ registerTest(
       fixture.metadata[0]?.byteSize,
       fixture.uploads[0]?.body.length,
     );
+    assertEquals(fixture.reservationUpdates, [fixture.uploads[0]?.body.length]);
     assertEquals(fixture.metadata[0]?.contentType, "image/jpeg");
   },
 );
+
+registerTest(
+  "claims an upload grant before decoding and cannot replay it",
+  async () => {
+    let sanitizeCalls = 0;
+    const fixture = createFixture({
+      sanitizePhoto: () => {
+        sanitizeCalls += 1;
+        throw new PhotoUploadError("Photo could not be decoded.", 415);
+      },
+    });
+    const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+    const grant = (await readJson(
+      await issueGrant(handler, validGrantRequest()),
+    )) as { uploadUrl: string; storagePath: string };
+
+    const first = await upload(handler, grant, bytes(3), "image/jpeg");
+    const replay = await upload(handler, grant, bytes(3), "image/jpeg");
+
+    assertEquals(first.status, 415);
+    assertEquals(replay.status, 409);
+    assertEquals(sanitizeCalls, 1);
+    assertEquals(fixture.reservations, [expectedPath()]);
+    assertEquals(fixture.uploads.length, 0);
+  },
+);
+
+registerTest("keeps a failed storage upload grant spent", async () => {
+  let sanitizeCalls = 0;
+  const fixture = createFixture({
+    storageFailure: true,
+    sanitizePhoto: (body) => {
+      sanitizeCalls += 1;
+      return Promise.resolve(body);
+    },
+  });
+  const handler = createPhotoUploadHandler(fixture.dependencies, functionUrl);
+  const grant = (await readJson(
+    await issueGrant(handler, validGrantRequest()),
+  )) as { uploadUrl: string; storagePath: string };
+
+  const first = await upload(handler, grant, bytes(3), "image/jpeg");
+  const replay = await upload(handler, grant, bytes(3), "image/jpeg");
+
+  assertEquals(first.status, 500);
+  assertEquals(replay.status, 409);
+  assertEquals(sanitizeCalls, 1);
+  assertEquals(fixture.reservations, [expectedPath()]);
+});
 
 registerTest(
   "issues an upload grant only for the exact completed application tuple",
@@ -708,13 +758,8 @@ registerTest(
 
     assertEquals(response.status, 500);
     assertEquals(fixture.removals, [expectedPath()]);
-    assertEquals(fixture.events, [
-      "reserve",
-      "storage",
-      "finalize",
-      "remove",
-      "release",
-    ]);
+    assertEquals(fixture.events, ["reserve", "storage", "finalize", "remove"]);
+    assertEquals(fixture.reservations, [expectedPath()]);
   },
 );
 
@@ -842,6 +887,7 @@ function createFixture(
     closesAtAfterStorage?: string;
     metadataFailure?: boolean;
     removalFailure?: boolean;
+    storageFailure?: boolean;
     photoRequired?: boolean;
     submissionState?: "pending_photo" | "submitted";
     completedPhotoId?: string;
@@ -874,6 +920,7 @@ function createFixture(
   const metadata: PhotoMetadata[] = [];
   const removals: string[] = [];
   const reservations: string[] = [];
+  const reservationUpdates: number[] = [];
   const events: string[] = [];
   const storedPaths = new Set<string>();
   const dependencies: PhotoUploadDependencies = {
@@ -894,10 +941,22 @@ function createFixture(
       return application;
     },
     async reserveUpload(value) {
+      if (reservations.includes(value.storagePath)) {
+        throw new PhotoUploadError("This photo upload was already used.", 409);
+      }
       events.push("reserve");
       reservations.push(value.storagePath);
     },
+    async updateReservation(value) {
+      if (!reservations.includes(value.storagePath)) {
+        throw new Error("Photo upload reservation is missing.");
+      }
+      reservationUpdates.push(value.byteSize);
+    },
     async uploadObject(path, body, contentType, uploadOptions) {
+      if (options.storageFailure) {
+        throw new Error("Storage unavailable.");
+      }
       if (storedPaths.has(path)) {
         throw new PhotoUploadError("This photo was already uploaded.", 409);
       }
@@ -959,13 +1018,6 @@ function createFixture(
       storedPaths.delete(path);
       removals.push(path);
     },
-    async releaseReservation(value) {
-      events.push("release");
-      const index = reservations.indexOf(value);
-      if (index >= 0) {
-        reservations.splice(index, 1);
-      }
-    },
     async loadCompletedPhoto(input) {
       if (
         options.completedPhotoId !== undefined &&
@@ -988,6 +1040,7 @@ function createFixture(
     metadata,
     removals,
     reservations,
+    reservationUpdates,
     uploads,
     closeOpportunity(closedAt: string) {
       application.closedAt = closedAt;

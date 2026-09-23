@@ -69,6 +69,7 @@ export interface PhotoUploadDependencies {
     input: PhotoApplicationLookup,
   ) => Promise<PhotoApplication | null>;
   reserveUpload: (reservation: PhotoUploadReservation) => Promise<void>;
+  updateReservation: (reservation: PhotoUploadReservation) => Promise<void>;
   uploadObject: (
     path: string,
     body: Uint8Array,
@@ -80,7 +81,6 @@ export interface PhotoUploadDependencies {
     tuple: PhotoApplicationLookup,
   ) => Promise<PhotoUploadResult>;
   removeObject: (path: string) => Promise<void>;
-  releaseReservation: (storagePath: string) => Promise<void>;
   loadCompletedPhoto: (
     input: PhotoApplicationLookup,
   ) => Promise<PhotoUploadResult | null>;
@@ -293,6 +293,15 @@ export function createPhotoUploadHandler(
         assertPhotoPending(application);
         assertUploadWindowOpen(application, dependencies.now());
 
+        const reservation: PhotoUploadReservation = {
+          id: claims.photoId,
+          applicationId: claims.applicationId,
+          storagePath: claims.storagePath,
+          contentType: "image/jpeg",
+          byteSize: claims.byteSize,
+        };
+        await dependencies.reserveUpload(reservation);
+
         const body = await readBoundedBytes(request, claims.byteSize);
         if (body.byteLength !== claims.byteSize) {
           throw new PhotoUploadError(
@@ -306,31 +315,18 @@ export function createPhotoUploadHandler(
           claims.contentType,
         );
 
-        const reservation: PhotoUploadReservation = {
-          id: claims.photoId,
-          applicationId: claims.applicationId,
-          storagePath: claims.storagePath,
-          contentType: "image/jpeg",
+        const metadata: PhotoMetadata = {
+          ...reservation,
           byteSize: sanitizedBody.byteLength,
         };
-        await dependencies.reserveUpload(reservation);
+        await dependencies.updateReservation(metadata);
+        await dependencies.uploadObject(
+          claims.storagePath,
+          sanitizedBody,
+          metadata.contentType,
+          { upsert: false },
+        );
 
-        try {
-          await dependencies.uploadObject(
-            claims.storagePath,
-            sanitizedBody,
-            reservation.contentType,
-            { upsert: false },
-          );
-        } catch (error) {
-          await releaseReservationAfterFailure(
-            dependencies,
-            claims.storagePath,
-          );
-          throw error;
-        }
-
-        let metadata: PhotoMetadata;
         try {
           const currentApplication = await dependencies.loadApplication(claims);
           if (currentApplication === null) {
@@ -338,7 +334,6 @@ export function createPhotoUploadHandler(
           }
           assertPhotoRequired(currentApplication);
           assertUploadWindowOpen(currentApplication, dependencies.now());
-          metadata = reservation;
         } catch (preFinalizationError) {
           await compensateUploadFailure(dependencies, claims.storagePath);
           throw preFinalizationError;
@@ -646,24 +641,12 @@ async function readBoundedBytes(
   return body;
 }
 
-async function releaseReservationAfterFailure(
-  dependencies: PhotoUploadDependencies,
-  storagePath: string,
-): Promise<void> {
-  try {
-    await dependencies.releaseReservation(storagePath);
-  } catch (error) {
-    dependencies.reportError("Photo upload reservation cleanup failed.", error);
-  }
-}
-
 async function compensateUploadFailure(
   dependencies: PhotoUploadDependencies,
   storagePath: string,
 ): Promise<void> {
   try {
     await dependencies.removeObject(storagePath);
-    await releaseReservationAfterFailure(dependencies, storagePath);
   } catch (error) {
     dependencies.reportError("Photo upload compensation failed.", error);
   }
@@ -921,6 +904,18 @@ export function createSupabaseDependencies(
         throw new Error(`Failed to reserve photo upload: ${error.message}`);
       }
     },
+    async updateReservation(reservation) {
+      const { data, error } = await client
+        .from("application_photo_upload_reservations")
+        .update({ byte_size: reservation.byteSize })
+        .eq("id", reservation.id)
+        .eq("storage_path", reservation.storagePath)
+        .select("id")
+        .maybeSingle();
+      if (error !== null || data?.id !== reservation.id) {
+        throw new Error("Failed to update photo upload reservation.");
+      }
+    },
     async uploadObject(path, body, contentType, options) {
       const { error } = await client.storage
         .from(BUCKET_ID)
@@ -973,15 +968,6 @@ export function createSupabaseDependencies(
       const { error } = await client.storage.from(BUCKET_ID).remove([path]);
       if (error !== null) {
         throw new Error(`Failed to remove photo: ${error.message}`);
-      }
-    },
-    async releaseReservation(storagePath) {
-      const { error } = await client
-        .from("application_photo_upload_reservations")
-        .delete()
-        .eq("storage_path", storagePath);
-      if (error !== null) {
-        throw new Error(`Failed to release photo upload: ${error.message}`);
       }
     },
     async loadCompletedPhoto(input) {

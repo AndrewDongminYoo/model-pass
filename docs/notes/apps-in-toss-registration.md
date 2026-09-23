@@ -38,7 +38,7 @@ The interface defaults to Korean and supports an English switch across applicati
 - Application screenshot: `assets/apps-in-toss/screenshot-03-application.png` (636 × 1048 PNG).
 
 The screenshots are browser captures of the current app with a local opportunity clearly labeled as an example and returned by `scripts/capture-store-screenshots.mjs`.
-They are not evidence that a live opportunity or Apps in Toss build exists.
+They are not evidence that a live opportunity exists or that an Apps in Toss bundle has been uploaded.
 Regenerate them after any relevant UI change and inspect all three images before submission.
 To regenerate, start Vite with non-production placeholder values in one terminal, then run the capture script in another:
 
@@ -46,6 +46,10 @@ To regenerate, start Vite with non-production placeholder values in one terminal
 VITE_SUPABASE_URL=https://model-pass.example.invalid VITE_SUPABASE_ANON_KEY=screenshot-only pnpm dev --host 127.0.0.1 --port 5173
 node scripts/capture-store-screenshots.mjs
 ```
+
+Run `pnpm build` to generate a local `model-pass.ait` test bundle.
+The bundle uses the provisional `model-pass` appName in `apps-in-toss.config.ts`; confirm it matches the registered console appName before uploading.
+Packaging alone does not implement Toss Login or satisfy the service pre-review and release gates.
 
 ## Gates Before Registration or Review
 

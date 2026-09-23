@@ -68,6 +68,8 @@ trunk check --all
 
 Run `supabase db reset` before `pnpm test:e2e` only on a disposable local database; the command destroys existing local data.
 The Playwright harness derives ephemeral local Supabase values at runtime and does not require committed credentials.
+`pnpm build` also packages a local `model-pass.ait` test bundle; its `appName` is provisional and must match the console app before upload.
+This bundle does not implement Toss Login or clear the service pre-review and launch gates below.
 Pull requests run the format, lint, type, unit, Edge Function, pgTAP, build, and Chromium end-to-end checks in [PR checks](.github/workflows/pr-checks.yml) against a fresh local Supabase stack.
 
 ## Delivery Gates

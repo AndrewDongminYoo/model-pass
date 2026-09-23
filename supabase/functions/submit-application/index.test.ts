@@ -83,6 +83,7 @@ function createDependencies(
   const persisted: ApplicationPersistenceCommand[] = [];
   let opportunityLoadCount = 0;
   let quotaConsumptionCount = 0;
+  const quotaCalls: unknown[][] = [];
   const dependencies: SubmissionDependencies = {
     now: () => currentDate,
     loadExistingAttempt: () => Promise.resolve(options.existingAttempt ?? null),
@@ -90,8 +91,9 @@ function createDependencies(
       opportunityLoadCount += 1;
       return Promise.resolve(opportunity);
     },
-    consumeQuota: () => {
+    consumeQuota: (...args) => {
       quotaConsumptionCount += 1;
+      quotaCalls.push(args);
       return Promise.resolve(options.quotaAllowed ?? true);
     },
     persistApplication: (command) => {
@@ -111,8 +113,18 @@ function createDependencies(
     persisted,
     getOpportunityLoadCount: () => opportunityLoadCount,
     getQuotaConsumptionCount: () => quotaConsumptionCount,
+    quotaCalls,
   };
 }
+
+registerTest("binds anonymous quota to the submission attempt", async () => {
+  const test = createDependencies();
+  await submitApplication(createInput(), test.dependencies, "a".repeat(64));
+
+  assertEquals(test.quotaCalls, [
+    [createOpportunity().id, "a".repeat(64), submissionAttemptId],
+  ]);
+});
 
 registerTest(
   "binds anonymous quota to the forwarded source without storing the IP",

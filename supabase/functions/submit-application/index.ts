@@ -65,7 +65,11 @@ export interface SubmissionIntent {
 
 export interface SubmissionDependencies {
   now: () => Date;
-  consumeQuota: (opportunityId: string, sourceHash: string) => Promise<boolean>;
+  consumeQuota: (
+    opportunityId: string,
+    sourceHash: string,
+    submissionAttemptId: string,
+  ) => Promise<boolean>;
   loadExistingAttempt: (
     opportunityId: string,
     submissionAttemptId: string,
@@ -205,7 +209,13 @@ export async function submitApplication(
     );
   }
 
-  if (!(await dependencies.consumeQuota(opportunity.id, sourceHash))) {
+  if (
+    !(await dependencies.consumeQuota(
+      opportunity.id,
+      sourceHash,
+      parsedInput.submissionAttemptId,
+    ))
+  ) {
     throw new SubmissionError(
       "Too many applications for this opportunity. Please try again later.",
       429,
@@ -347,14 +357,14 @@ export function createSupabaseDependencies(
 ): SubmissionDependencies {
   return {
     now: () => new Date(),
-    async consumeQuota(opportunityId, sourceHash) {
+    async consumeQuota(opportunityId, sourceHash, submissionAttemptId) {
       const { data, error } = await client.rpc(
-        "consume_anonymous_request_quota",
+        "consume_anonymous_submission_quota",
         {
           p_opportunity_id: opportunityId,
-          p_action: "submit_application",
           p_source_hash: sourceHash,
           p_limit: 10,
+          p_submission_attempt_id: submissionAttemptId,
         },
       );
       if (error !== null || typeof data !== "boolean") {

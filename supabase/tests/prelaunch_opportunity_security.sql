@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(15);
+select plan(20);
 
 insert into auth.users (id, aud, role, email, encrypted_password)
 values (
@@ -174,6 +174,36 @@ select is(
   ),
   false,
   'clients cannot reset or consume quota directly'
+);
+
+select is(public.consume_anonymous_submission_quota(
+  '60000000-0000-4000-8000-000000000011', repeat('c', 64), 2,
+  '60000000-0000-4000-8000-000000000101'
+), true, 'first submission attempt consumes one slot');
+
+select is(public.consume_anonymous_submission_quota(
+  '60000000-0000-4000-8000-000000000011', repeat('c', 64), 2,
+  '60000000-0000-4000-8000-000000000101'
+), true, 'retrying the same submission attempt consumes no new slot');
+
+select is(public.consume_anonymous_submission_quota(
+  '60000000-0000-4000-8000-000000000011', repeat('c', 64), 2,
+  '60000000-0000-4000-8000-000000000102'
+), true, 'a distinct submission attempt consumes the second slot');
+
+select is(public.consume_anonymous_submission_quota(
+  '60000000-0000-4000-8000-000000000011', repeat('c', 64), 2,
+  '60000000-0000-4000-8000-000000000103'
+), false, 'a third distinct submission attempt is blocked');
+
+select is(
+  has_function_privilege(
+    'authenticated',
+    'public.consume_anonymous_submission_quota(uuid,text,integer,uuid)',
+    'execute'
+  ),
+  false,
+  'clients cannot consume idempotent submission quota directly'
 );
 
 select * from finish();

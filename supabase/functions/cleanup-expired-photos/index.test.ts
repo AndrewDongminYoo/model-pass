@@ -3,6 +3,7 @@ import {
   cleanupExpiredPhotos,
   createCleanupExpiredPhotosHandler,
   createSupabaseDependencies,
+  validateCleanupInvocationSecret,
   type CleanupDependencies,
   type CleanupPhoto,
   type StaleReservation,
@@ -470,6 +471,19 @@ registerTest(
     assertEquals(await dependencies.authorize("dedicated-cleanup-token"), true);
   },
 );
+
+registerTest("rejects the documented cleanup token placeholder", () => {
+  let rejected = false;
+  try {
+    validateCleanupInvocationSecret(
+      "replace-with-a-different-at-least-32-byte-random-secret",
+      "service-role-key",
+    );
+  } catch {
+    rejected = true;
+  }
+  assertEquals(rejected, true);
+});
 
 function cleanupState() {
   let photos: CleanupPhoto[] = [

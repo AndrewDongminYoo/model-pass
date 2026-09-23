@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 const BUCKET_ID = "application-photos";
 const MAX_BODY_BYTES = 1024;
+const DOCUMENTED_CLEANUP_TOKEN_PLACEHOLDER =
+  "replace-with-a-different-at-least-32-byte-random-secret";
 
 export interface CleanupPhoto {
   id: string;
@@ -591,19 +593,31 @@ async function constantTimeEqual(
   return difference === 0;
 }
 
-if (import.meta.main) {
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const cleanupInvocationSecret = Deno.env.get("PHOTO_CLEANUP_TOKEN");
+export function validateCleanupInvocationSecret(
+  secret: string | undefined,
+  serviceRoleKey: string,
+): string {
   if (
-    !supabaseUrl ||
-    !serviceRoleKey ||
-    !cleanupInvocationSecret ||
-    cleanupInvocationSecret.length < 32 ||
-    cleanupInvocationSecret === serviceRoleKey
+    secret === undefined ||
+    secret === DOCUMENTED_CLEANUP_TOKEN_PLACEHOLDER ||
+    new TextEncoder().encode(secret).byteLength < 32 ||
+    secret === serviceRoleKey
   ) {
     throw new Error("Cleanup server environment is not configured.");
   }
+  return secret;
+}
+
+if (import.meta.main) {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Cleanup server environment is not configured.");
+  }
+  const cleanupInvocationSecret = validateCleanupInvocationSecret(
+    Deno.env.get("PHOTO_CLEANUP_TOKEN"),
+    serviceRoleKey,
+  );
   const client = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });

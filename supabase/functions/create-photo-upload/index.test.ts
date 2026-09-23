@@ -1,14 +1,15 @@
 import {
-  PhotoFinalizationRejectedError,
-  PhotoUploadError,
   createPhotoUploadHandler,
   createSupabaseDependencies,
-  sanitizeUploadedPhoto,
-  validatePhotoUploadSigningSecret,
   type PhotoApplication,
+  PhotoFinalizationRejectedError,
   type PhotoMetadata,
   type PhotoUploadDependencies,
+  PhotoUploadError,
+  sanitizeUploadedPhoto,
+  validatePhotoUploadSigningSecret,
 } from "./index.ts";
+import { MagickImageInfo } from "@imagemagick/magick-wasm";
 
 type TestFunction = () => void | Promise<void>;
 type TestRegistrar = (name: string, testFunction: TestFunction) => void;
@@ -30,6 +31,59 @@ const pngWithLocation = Uint8Array.from(
   ),
   (character) => character.charCodeAt(0),
 );
+const jpegWithOrientation = Uint8Array.from(
+  atob(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCAADAAIBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABkQAAMBAQEAAAAAAAAAAAAAAAECBQMEAP/aAAgBAQAAPwBSJMmVAlcUKFM5J02dz58nHx8mK44c2Gahc8s81AVEVQFCgAAAAe//2Q==",
+  ),
+  (character) => character.charCodeAt(0),
+);
+const orientationExif = Uint8Array.from([
+  255, 225, 0, 34, 69, 120, 105, 102, 0, 0, 73, 73, 42, 0, 8, 0, 0, 0, 1, 0, 18,
+  1, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+registerTest(
+  "rejects oversized dimensions before decoding pixel data",
+  async () => {
+    const oversized = Uint8Array.from(pngWithLocation);
+    new DataView(oversized.buffer).setUint32(16, 4001);
+    new DataView(oversized.buffer).setUint32(20, 4000);
+    let crc = 0xffffffff;
+    for (const byte of oversized.subarray(12, 29)) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) {
+        crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+      }
+    }
+    new DataView(oversized.buffer).setUint32(29, (crc ^ 0xffffffff) >>> 0);
+
+    let rejection: unknown;
+    try {
+      await sanitizeUploadedPhoto(oversized, "image/png");
+    } catch (error) {
+      rejection = error;
+    }
+    assertEquals(rejection instanceof PhotoUploadError, true);
+    assertEquals(
+      (rejection as Error).message,
+      "Photo format or dimensions are invalid.",
+    );
+  },
+);
+
+registerTest("applies camera orientation before removing EXIF", async () => {
+  const oriented = new Uint8Array(
+    jpegWithOrientation.length + orientationExif.length,
+  );
+  oriented.set(jpegWithOrientation.subarray(0, 2));
+  oriented.set(orientationExif, 2);
+  oriented.set(jpegWithOrientation.subarray(2), 2 + orientationExif.length);
+
+  const cleaned = await sanitizeUploadedPhoto(oriented, "image/jpeg");
+  const info = MagickImageInfo.create(cleaned);
+  assertEquals([info.width, info.height, info.orientation], [3, 2, 0]);
+  assertEquals(new TextDecoder().decode(cleaned).includes("Exif"), false);
+});
 
 registerTest(
   "includes the image decoder in the hosted function bundle",
@@ -1073,7 +1127,9 @@ function assert(condition: unknown, message = "Expected condition to be true") {
 function assertEquals(actual: unknown, expected: unknown) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
     throw new Error(
-      `Expected ${JSON.stringify(expected)}, received ${JSON.stringify(actual)}`,
+      `Expected ${JSON.stringify(expected)}, received ${JSON.stringify(
+        actual,
+      )}`,
     );
   }
 }

@@ -4,12 +4,14 @@ import {
   ImageMagick,
   initializeImageMagick,
   MagickFormat,
+  MagickImageInfo,
 } from "@imagemagick/magick-wasm";
 import { isEvaluationResult } from "../../../src/features/applications/domain/application.ts";
 import { parseRuleDefinitions } from "../../../src/features/eligibility/domain/types.ts";
 
 const BUCKET_ID = "application-photos";
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const MAX_PHOTO_PIXELS = 16_000_000;
 const MAX_GRANT_BODY_BYTES = 4 * 1024;
 const UPLOAD_LIFETIME_SECONDS = 600;
 const DOCUMENTED_SIGNING_SECRET_PLACEHOLDER =
@@ -753,6 +755,26 @@ export async function sanitizeUploadedPhoto(
   await imageMagickReady;
 
   try {
+    const info = MagickImageInfo.create(body);
+    const acceptedFormat =
+      contentType === "image/jpeg"
+        ? info.format === MagickFormat.Jpeg
+        : contentType === "image/png"
+          ? info.format === MagickFormat.Png
+          : info.format === MagickFormat.Heic ||
+            info.format === MagickFormat.Heif;
+    if (
+      !acceptedFormat ||
+      info.width <= 0 ||
+      info.height <= 0 ||
+      info.width > MAX_PHOTO_PIXELS / info.height
+    ) {
+      throw new PhotoUploadError(
+        "Photo format or dimensions are invalid.",
+        415,
+      );
+    }
+
     const output = ImageMagick.read(body, (image): Uint8Array => {
       const acceptedFormat =
         contentType === "image/jpeg"
@@ -761,12 +783,13 @@ export async function sanitizeUploadedPhoto(
             ? image.format === MagickFormat.Png
             : image.format === MagickFormat.Heic ||
               image.format === MagickFormat.Heif;
-      if (!acceptedFormat || image.width * image.height > 16_000_000) {
+      if (!acceptedFormat || image.width > MAX_PHOTO_PIXELS / image.height) {
         throw new PhotoUploadError(
           "Photo format or dimensions are invalid.",
           415,
         );
       }
+      image.autoOrient();
       image.strip();
       image.quality = 85;
       return image.write(MagickFormat.Jpeg, (data) => Uint8Array.from(data));

@@ -1,13 +1,17 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { RecruiterApplication } from "../../applications/api/application-photos";
 import { ApplicationCard } from "./ApplicationCard";
 
-const { getAttendanceMock, selectApplicationMock } = vi.hoisted(() => ({
-  getAttendanceMock: vi.fn(),
-  selectApplicationMock: vi.fn(),
-}));
+const { getAttendanceMock, selectApplicationMock, unselectApplicationMock } =
+  vi.hoisted(() => ({
+    getAttendanceMock: vi.fn(),
+    selectApplicationMock: vi.fn(),
+    unselectApplicationMock: vi.fn(),
+  }));
+
+afterEach(() => vi.resetAllMocks());
 
 vi.mock("../../applications/api/attendance", async (importOriginal) => {
   const original =
@@ -16,7 +20,87 @@ vi.mock("../../applications/api/attendance", async (importOriginal) => {
     ...original,
     getAttendance: getAttendanceMock,
     selectApplication: selectApplicationMock,
+    unselectApplication: unselectApplicationMock,
   };
+});
+
+it("lets the recruiter undo selection before attendance activity", async () => {
+  // Production break: an accidental selection is permanent if the recruiter has no server-backed undo action.
+  const user = (await import("@testing-library/user-event")).default.setup();
+  let selectedOnServer = true;
+  getAttendanceMock.mockImplementation(() =>
+    Promise.resolve({
+      applicationId,
+      viewerParty: "recruiter",
+      selected: selectedOnServer,
+      allowedActions: selectedOnServer ? ["recruiter_confirmed"] : [],
+      events: [],
+    }),
+  );
+  unselectApplicationMock.mockImplementation(() => {
+    selectedOnServer = false;
+    return Promise.resolve({ applicationId });
+  });
+  render(
+    <MemoryRouter
+      initialEntries={[
+        `/recruiter/opportunities/${opportunityId}/applications`,
+      ]}
+    >
+      <Routes>
+        <Route
+          path="/recruiter/opportunities/:opportunityId/applications"
+          element={<ApplicationCard application={application} />}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await user.click(await screen.findByRole("button", { name: "선택 취소" }));
+
+  expect(
+    await screen.findByRole("button", { name: "지원자 선택" }),
+  ).toBeEnabled();
+  expect(unselectApplicationMock).toHaveBeenCalledWith({
+    applicationId,
+    opportunityId,
+  });
+});
+
+it("hides undo selection after attendance activity is loaded", async () => {
+  getAttendanceMock.mockResolvedValue({
+    applicationId,
+    viewerParty: "recruiter",
+    selected: true,
+    allowedActions: [],
+    events: [
+      {
+        id: "00000000-0000-4000-8000-000000000401",
+        party: "recruiter",
+        eventType: "recruiter_confirmed",
+        occurredAt: "2026-09-22T03:00:00.000Z",
+      },
+    ],
+  });
+  render(
+    <MemoryRouter
+      initialEntries={[
+        `/recruiter/opportunities/${opportunityId}/applications`,
+      ]}
+    >
+      <Routes>
+        <Route
+          path="/recruiter/opportunities/:opportunityId/applications"
+          element={<ApplicationCard application={application} />}
+        />
+      </Routes>
+    </MemoryRouter>,
+  );
+
+  await screen.findByText(/모집자 참여 확정/);
+  expect(
+    screen.queryByRole("button", { name: "선택 취소" }),
+  ).not.toBeInTheDocument();
 });
 
 const applicationId = "00000000-0000-4000-8000-000000000101";

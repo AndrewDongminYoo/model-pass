@@ -465,6 +465,31 @@ it("renders an authentication error instead of an anonymous empty state", async 
   ).not.toBeInTheDocument();
 });
 
+it("localizes a recruiter application load failure in English", async () => {
+  localStorage.setItem("model-pass-locale", "en");
+  getRecruiterApplicationsMock.mockRejectedValue(new Error("network failure"));
+  render(
+    <I18nProvider>
+      <MemoryRouter
+        initialEntries={[
+          `/recruiter/opportunities/${opportunityId}/applications`,
+        ]}
+      >
+        <Routes>
+          <Route
+            path="/recruiter/opportunities/:opportunityId/applications"
+            element={<ApplicationsPage />}
+          />
+        </Routes>
+      </MemoryRouter>
+    </I18nProvider>,
+  );
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Could not load applications.",
+  );
+});
+
 it("exposes the recruiter applications route", async () => {
   // Production break: omitting the route leaves the authenticated review page unreachable.
   getRecruiterApplicationsMock.mockResolvedValue([]);

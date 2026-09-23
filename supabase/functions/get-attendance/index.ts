@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { attendanceAccessToken } from "../_shared/attendance-access.ts";
 import type {
   AttendanceEvent,
   AttendanceEventType,
@@ -62,7 +63,11 @@ export function createGetAttendanceHandler(
       const bearerToken = readBearerToken(request.headers.get("Authorization"));
       const access = await dependencies.resolveAccess(
         input,
-        bearerToken === platformAnonToken ? undefined : bearerToken,
+        attendanceAccessToken(
+          input.submissionAttemptId !== undefined,
+          bearerToken,
+          platformAnonToken,
+        ),
       );
       if (
         access === null ||
@@ -131,8 +136,8 @@ function allowedActions(
     ];
   }
   return party === "recruiter"
-    ? ["completed", "recruiter_cancelled", "applicant_no_show"]
-    : ["completed", "applicant_cancelled", "recruiter_no_show"];
+    ? ["completed", "applicant_no_show"]
+    : ["completed", "recruiter_no_show"];
 }
 
 function filterEvents(

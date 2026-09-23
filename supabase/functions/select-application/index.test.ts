@@ -84,7 +84,35 @@ registerTest("does not reveal another recruiter's application", async () => {
   assertEquals(await response.json(), { error: "Application not found." });
 });
 
-function request(accessToken?: string) {
+registerTest(
+  "routes an authenticated selection reversal to the same owner boundary",
+  async () => {
+    // Production break: a local-only undo leaves the server selection active and prevents a corrected choice.
+    let recordedAction: string | undefined;
+    const dependencies: SelectApplicationDependencies = {
+      authenticate: () => Promise.resolve(recruiterId),
+      selectOwnedApplication: (input) => {
+        recordedAction = (input as typeof input & { action?: string }).action;
+        return Promise.resolve({
+          applicationId,
+          selectedAt: "2026-09-22T03:00:00.000Z",
+        });
+      },
+    };
+
+    const response = await createSelectApplicationHandler(dependencies)(
+      request("owner-token", { action: "unselect" }),
+    );
+
+    assertEquals(response.status, 200);
+    assertEquals(recordedAction, "unselect");
+  },
+);
+
+function request(
+  accessToken?: string,
+  overrides: Record<string, unknown> = {},
+) {
   return new Request("http://localhost/functions/v1/select-application", {
     method: "POST",
     headers: {
@@ -93,7 +121,7 @@ function request(accessToken?: string) {
         ? {}
         : { Authorization: `Bearer ${accessToken}` }),
     },
-    body: JSON.stringify({ applicationId, opportunityId }),
+    body: JSON.stringify({ applicationId, opportunityId, ...overrides }),
   });
 }
 

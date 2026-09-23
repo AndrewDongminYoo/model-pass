@@ -28,7 +28,7 @@ select set_config(
   true
 );
 
-select lives_ok(
+select throws_ok(
   $$
     insert into public.opportunities (
       recruiter_id,
@@ -60,7 +60,9 @@ select lives_ok(
       '["adult-only"]'
     )
   $$,
-  'authenticated recruiter can publish an opportunity they own after confirming every hard rule'
+  '42501',
+  'permission denied for table opportunities',
+  'authenticated recruiter cannot bypass the publication function'
 );
 
 select throws_ok(
@@ -96,9 +98,11 @@ select throws_ok(
     )
   $$,
   '42501',
-  'new row violates row-level security policy for table "opportunities"',
+  'permission denied for table opportunities',
   'authenticated recruiter cannot publish under another recruiter id'
 );
+
+reset role;
 
 select throws_ok(
   $$

@@ -5,6 +5,7 @@ import {
   getAttendance,
   recordAttendance,
   selectApplication,
+  unselectApplication,
 } from "./attendance";
 
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
@@ -57,6 +58,18 @@ it("persists recruiter selection through the authenticated selection function", 
   });
   expect(invokeMock).toHaveBeenCalledWith("select-application", {
     body: { applicationId, opportunityId },
+  });
+});
+
+it("sends a selection reversal to the authenticated server function", async () => {
+  // Production break: sending a plain select request again leaves an accidental selection active.
+  invokeMock.mockResolvedValue({ data: { applicationId }, error: null });
+
+  await expect(
+    unselectApplication({ applicationId, opportunityId }),
+  ).resolves.toEqual({ applicationId });
+  expect(invokeMock).toHaveBeenCalledWith("select-application", {
+    body: { applicationId, opportunityId, action: "unselect" },
   });
 });
 

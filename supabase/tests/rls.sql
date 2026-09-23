@@ -476,7 +476,7 @@ select throws_ok(
 );
 
 update public.opportunities
-set closed_at = now()
+set status = 'closed', closed_at = now()
 where id = '00000000-0000-0000-0000-000000000003';
 
 select is(
@@ -572,9 +572,9 @@ select throws_ok(
       '{"rulesetId":"hair-promotion-updated","rulesetVersion":2,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
     )
   $$,
-  '22023',
-  'Opportunity is closed.',
-  'transaction rejects an opportunity with closed_at set'
+  'P0002',
+  'Opportunity not found.',
+  'transaction rejects a closed opportunity'
 );
 
 update public.opportunities
@@ -1063,18 +1063,15 @@ select is(
   'early opportunity closure resets photo retention to actual closure plus 30 days'
 );
 
-update public.opportunities
-set closed_at = '2099-09-01T03:00:00Z'
-where id = '00000000-0000-0000-0000-000000000004';
-
-select is(
-  (
-    select expires_at
-    from public.application_photos
-    where id = '00000000-0000-4000-8000-000000000044'
-  ),
-  '2099-08-31T03:00:00Z'::timestamptz,
-  'a later closed_at cannot extend existing photo retention'
+select throws_ok(
+  $$
+    update public.opportunities
+    set closed_at = '2099-09-01T03:00:00Z'
+    where id = '00000000-0000-0000-0000-000000000004'
+  $$,
+  '22023',
+  'An opportunity closure cannot be reversed or delayed.',
+  'a later closed_at cannot extend photo retention or delay applicant deletion'
 );
 
 update public.opportunities

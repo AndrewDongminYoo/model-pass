@@ -6,6 +6,7 @@ const uuidPattern =
 interface SelectionInput {
   applicationId: string;
   opportunityId: string;
+  action: "select" | "unselect";
 }
 
 interface SelectionResult {
@@ -13,11 +14,15 @@ interface SelectionResult {
   selectedAt: string;
 }
 
+interface UnselectionResult {
+  applicationId: string;
+}
+
 export interface SelectApplicationDependencies {
   authenticate: (accessToken: string) => Promise<string | null>;
   selectOwnedApplication: (
     input: SelectionInput & { recruiterId: string },
-  ) => Promise<SelectionResult | null>;
+  ) => Promise<SelectionResult | UnselectionResult | null>;
 }
 
 class SelectionError extends Error {
@@ -79,18 +84,23 @@ function parseInput(value: unknown): SelectionInput {
   const input = value as Record<string, unknown>;
   if (
     Object.keys(input).some(
-      (key) => key !== "applicationId" && key !== "opportunityId",
+      (key) =>
+        key !== "applicationId" && key !== "opportunityId" && key !== "action",
     ) ||
     typeof input.applicationId !== "string" ||
     !uuidPattern.test(input.applicationId) ||
     typeof input.opportunityId !== "string" ||
-    !uuidPattern.test(input.opportunityId)
+    !uuidPattern.test(input.opportunityId) ||
+    (input.action !== undefined &&
+      input.action !== "select" &&
+      input.action !== "unselect")
   ) {
     throw new SelectionError("Invalid selection request.", 400);
   }
   return {
     applicationId: input.applicationId,
     opportunityId: input.opportunityId,
+    action: input.action === "unselect" ? "unselect" : "select",
   };
 }
 
@@ -104,7 +114,9 @@ export function createSupabaseDependencies(
     },
     async selectOwnedApplication(input) {
       const { data, error } = await client.rpc(
-        "select_application_for_recruiter",
+        input.action === "unselect"
+          ? "unselect_application_for_recruiter"
+          : "select_application_for_recruiter",
         {
           p_application_id: input.applicationId,
           p_opportunity_id: input.opportunityId,
@@ -112,7 +124,7 @@ export function createSupabaseDependencies(
         },
       );
       if (error !== null) throw error;
-      return data as SelectionResult | null;
+      return data as SelectionResult | UnselectionResult | null;
     },
   };
 }

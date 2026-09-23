@@ -186,13 +186,38 @@ registerTest(
     )(request({ applicationId, opportunityId, submissionAttemptId }));
     const body = await applicantResponse.json();
 
-    assertEquals(body.allowedActions, [
-      "completed",
-      "applicant_cancelled",
-      "recruiter_no_show",
-    ]);
+    assertEquals(body.allowedActions, ["completed", "recruiter_no_show"]);
     assertEquals(body.events[0].id, noShowId);
     assertEquals(body.events[0].eventType, "recruiter_no_show");
+  },
+);
+
+registerTest(
+  "uses the applicant capability even when a recruiter session bearer is present",
+  async () => {
+    // Production break: a shared Supabase client sends the recruiter JWT and hides applicant attendance in the same browser.
+    let resolvedAccessToken: string | undefined;
+    const value = dependencies("applicant", []);
+    value.resolveAccess = (_capability, accessToken) => {
+      resolvedAccessToken = accessToken;
+      return Promise.resolve({
+        actor: { party: "applicant" },
+        startsAt: "2099-09-22T03:00:00.000Z",
+        selected: true,
+      });
+    };
+    const response = await createGetAttendanceHandler(
+      value,
+      "legacy-anon-key",
+    )(
+      request(
+        { applicationId, opportunityId, submissionAttemptId },
+        "recruiter-session-jwt",
+      ),
+    );
+
+    assertEquals(response.status, 200);
+    assertEquals(resolvedAccessToken, undefined);
   },
 );
 

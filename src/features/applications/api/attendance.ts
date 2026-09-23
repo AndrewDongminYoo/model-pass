@@ -29,6 +29,10 @@ export interface ApplicationSelection {
   selectedAt: string;
 }
 
+export interface ApplicationUnselection {
+  applicationId: string;
+}
+
 export interface RecordAttendanceInput extends AttendanceCapability {
   eventType: AttendanceEventType;
   party: AttendanceParty;
@@ -73,6 +77,27 @@ export async function selectApplication(
     throw new Error("The selection response is invalid.");
   }
   return data;
+}
+
+export async function unselectApplication(
+  capability: Pick<AttendanceCapability, "applicationId" | "opportunityId">,
+): Promise<ApplicationUnselection> {
+  const { data, error } = await getSupabaseClient().functions.invoke(
+    "select-application",
+    { body: { ...capabilityBody(capability), action: "unselect" } },
+  );
+  if (error !== null) {
+    throw (await parseAttendanceHttpError(error)) ?? error;
+  }
+  if (
+    typeof data !== "object" ||
+    data === null ||
+    (data as { applicationId?: unknown }).applicationId !==
+      capability.applicationId
+  ) {
+    throw new Error("The selection reversal response is invalid.");
+  }
+  return data as ApplicationUnselection;
 }
 
 export async function recordAttendance(

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { attendanceAccessToken } from "../_shared/attendance-access.ts";
 import type {
   AttendanceEventType,
   AttendanceParty,
@@ -69,7 +70,11 @@ export function createRecordAttendanceHandler(
       const bearerToken = readBearerToken(request.headers.get("Authorization"));
       const access = await dependencies.resolveAccess(
         input,
-        bearerToken === platformAnonToken ? undefined : bearerToken,
+        attendanceAccessToken(
+          input.submissionAttemptId !== undefined,
+          bearerToken,
+          platformAnonToken,
+        ),
       );
       if (access === null) {
         throw new AttendanceRequestError("Attendance access denied.", 403);
@@ -117,6 +122,8 @@ function assertEventTime(
   }
   const isConfirmation =
     eventType === "recruiter_confirmed" || eventType === "applicant_confirmed";
+  const isCancellation =
+    eventType === "recruiter_cancelled" || eventType === "applicant_cancelled";
   const isPostAppointmentOutcome = new Set<AttendanceEventType>([
     "completed",
     "recruiter_no_show",
@@ -125,6 +132,12 @@ function assertEventTime(
   if (isConfirmation && now >= startsAt) {
     throw new AttendanceRequestError(
       "Attendance confirmation is only available before the appointment.",
+      409,
+    );
+  }
+  if (isCancellation && now >= startsAt) {
+    throw new AttendanceRequestError(
+      "Attendance cancellation is only available before the appointment.",
       409,
     );
   }

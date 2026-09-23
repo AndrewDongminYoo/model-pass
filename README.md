@@ -57,7 +57,7 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
-for function_dir in supabase/functions/*; do deno test -A --sloppy-imports --frozen-lockfile --config "$function_dir/deno.json" --lock "$function_dir/deno.lock" "$function_dir/index.test.ts"; done
+for test_file in supabase/functions/*/index.test.ts; do function_dir="${test_file%/index.test.ts}"; deno test -A --sloppy-imports --frozen-lockfile --config "$function_dir/deno.json" --lock "$function_dir/deno.lock" "$test_file"; done
 supabase test db
 pnpm build
 pnpm test:e2e
@@ -66,6 +66,7 @@ trunk check --all
 
 Run `supabase db reset` before `pnpm test:e2e` only on a disposable local database; the command destroys existing local data.
 The Playwright harness derives ephemeral local Supabase values at runtime and does not require committed credentials.
+Pull requests run the format, lint, type, unit, Edge Function, pgTAP, build, and Chromium end-to-end checks in [PR checks](.github/workflows/pr-checks.yml) against a fresh local Supabase stack.
 
 ## Delivery Gates
 

@@ -32,6 +32,12 @@ const buildInputSchema = z
 
 export type BuildOpportunityRulesInput = z.infer<typeof buildInputSchema>;
 
+const reservedConditionFields = new Set(
+  [...hairPromotionV2Locked, ...makeupCertificationV2Locked("female")].map(
+    (rule) => rule.field,
+  ),
+);
+
 export function buildOpportunityRules(
   input: BuildOpportunityRulesInput,
 ): RuleDefinition[] {
@@ -54,7 +60,9 @@ export function buildOpportunityRules(
   for (const condition of parsed.conditions) {
     if (
       !/^[A-Za-z][A-Za-z0-9]*$/.test(condition.field) ||
-      condition.field in Object.prototype
+      condition.field in Object.prototype ||
+      condition.field.toLowerCase().includes("photo") ||
+      reservedConditionFields.has(condition.field)
     ) {
       throw new Error("Condition field is invalid.");
     }

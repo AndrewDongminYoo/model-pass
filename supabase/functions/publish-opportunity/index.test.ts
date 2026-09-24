@@ -424,6 +424,47 @@ registerTest("rejects a hidden extra condition in the preview", async () => {
 });
 
 registerTest(
+  "rejects forged fields that applicants cannot answer",
+  async () => {
+    const { dependencies, persisted } = createDependencies(recruiterId);
+    const editableRule = explicitHairRules[3];
+    if (editableRule === undefined)
+      throw new Error("Custom rule fixture is missing.");
+
+    for (const field of ["customPhotoEvidence", "isWithinMakeupAgeLimit"]) {
+      const input = createInput();
+      const response = await createPublishOpportunityHandler(dependencies)(
+        new Request("http://localhost/functions/v1/publish-opportunity", {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer recruiter-token",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            ...input,
+            draft: {
+              ...input.draft,
+              conditions: [{ ...explicitHairCondition, field }],
+              rules: [
+                ...explicitHairRules.slice(0, 3),
+                { ...editableRule, field },
+              ],
+            },
+          }),
+        }),
+      );
+
+      assertEquals(response.status, 400);
+      assertEquals(
+        (await response.json()).error,
+        "Opportunity conditions are invalid.",
+      );
+    }
+    assertEquals(persisted.length, 0);
+  },
+);
+
+registerTest(
   "rejects a custom condition missing its published question",
   async () => {
     const { dependencies, persisted } = createDependencies(recruiterId);

@@ -121,6 +121,18 @@ it("rejects a condition field that could read an inherited answer", () => {
   ).toThrow("Condition field is invalid.");
 });
 
+it("rejects custom fields reserved for hidden photos or another template", () => {
+  for (const field of ["customPhotoEvidence", "isWithinMakeupAgeLimit"]) {
+    expect(() =>
+      buildOpportunityRules({
+        category: "hair_promotion",
+        rulesetVersion: 2,
+        conditions: [{ ...lengthCondition, field }],
+      }),
+    ).toThrow("Condition field is invalid.");
+  }
+});
+
 it("rejects a caller that removes or edits a locked hair rule", () => {
   const rules = buildOpportunityRules({
     category: "hair_promotion",

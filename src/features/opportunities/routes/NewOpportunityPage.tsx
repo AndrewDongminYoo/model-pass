@@ -24,7 +24,10 @@ export function NewOpportunityPage() {
           )}
         </p>
       </header>
-      <OpportunityForm onSubmit={setDraft} />
+      <OpportunityForm
+        onSubmit={setDraft}
+        onInvalidatePreview={() => setDraft(undefined)}
+      />
       {draft && (
         <OpportunityPreview draft={draft} onPublish={publishOpportunity} />
       )}

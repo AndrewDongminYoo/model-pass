@@ -27,8 +27,9 @@ test("publishes an authenticated recruiter opportunity and returns private workf
     await page
       .getByRole("button", { name: "Hair length Add condition" })
       .click();
-    const applicantQuestion = "현재 머리카락이 어깨 아래까지 내려오나요?";
-    await page.getByLabel("Question · Hair length").fill(applicantQuestion);
+    const initialQuestion = "현재 머리카락이 어깨 아래까지 내려오나요?";
+    const applicantQuestion = "현재 머리카락이 쇄골 아래까지 내려오나요?";
+    await page.getByLabel("Question · Hair length").fill(initialQuestion);
     await page.getByLabel("Expected answer · Hair length").selectOption("yes");
     await page
       .getByLabel("Condition type · Hair length")
@@ -37,7 +38,7 @@ test("publishes an authenticated recruiter opportunity and returns private workf
     await expect(
       page
         .getByRole("region", { name: "Review items" })
-        .getByText(applicantQuestion),
+        .getByText(initialQuestion),
     ).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
     expect(
@@ -58,6 +59,25 @@ test("publishes an authenticated recruiter opportunity and returns private workf
     expect(hardRuleCount).toBeGreaterThan(0);
     for (let index = 0; index < hardRuleCount; index += 1) {
       await hardRuleConfirmations.nth(index).check();
+    }
+
+    await page.getByLabel("Question · Hair length").fill(applicantQuestion);
+    await expect(
+      page.getByRole("region", { name: "Opportunity preview" }),
+    ).toHaveCount(0);
+    await page.getByRole("button", { name: "Preview opportunity" }).click();
+    await expect(
+      page
+        .getByRole("region", { name: "Review items" })
+        .getByText(applicantQuestion),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Publish opportunity" }),
+    ).toBeDisabled();
+    for (const confirmation of await page
+      .getByLabel(/^Confirm hard rule:/)
+      .all()) {
+      await confirmation.check();
     }
 
     await page.getByRole("button", { name: "Publish opportunity" }).click();

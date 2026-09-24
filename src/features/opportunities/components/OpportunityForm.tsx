@@ -24,6 +24,7 @@ import { useI18n } from "../../../i18n/locale";
 
 interface OpportunityFormProps {
   onSubmit: (draft: OpportunityDraft) => void;
+  onInvalidatePreview?: () => void;
 }
 
 type BenefitType = "cash" | "procedure";
@@ -99,7 +100,10 @@ const validationMessages: Record<string, readonly [string, string]> = {
   ],
 };
 
-export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
+export function OpportunityForm({
+  onSubmit,
+  onInvalidatePreview,
+}: OpportunityFormProps) {
   const { locale, t } = useI18n();
   const [category, setCategory] =
     useState<OpportunityCategory>("hair_promotion");
@@ -123,6 +127,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
       : makeupCertificationV2Suggestions;
 
   function addSuggestion(suggestion: (typeof suggestions)[number]) {
+    onInvalidatePreview?.();
     setConditions((current) => [
       ...current,
       {
@@ -138,6 +143,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
   }
 
   function addCustomCondition() {
+    onInvalidatePreview?.();
     setConditions((current) => [
       ...current,
       {
@@ -167,6 +173,11 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
       delete next[`conditions.${id}.expected`];
       return next;
     });
+  }
+
+  function removeCondition(id: string) {
+    onInvalidatePreview?.();
+    setConditions((current) => current.filter((entry) => entry.id !== id));
   }
 
   function localizeValidationMessage(code: string) {
@@ -268,7 +279,12 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
   }
 
   return (
-    <form className="surface form-stack" onSubmit={submit} noValidate>
+    <form
+      className="surface form-stack"
+      onChange={onInvalidatePreview}
+      onSubmit={submit}
+      noValidate
+    >
       <h2>{t("Session details", "모집 일정과 혜택")}</h2>
       <div className="field">
         <label htmlFor="category">{t("Category", "모집 분야")}</label>
@@ -543,11 +559,7 @@ export function OpportunityForm({ onSubmit }: OpportunityFormProps) {
                   <button
                     className="button--secondary"
                     type="button"
-                    onClick={() =>
-                      setConditions((current) =>
-                        current.filter((entry) => entry.id !== condition.id),
-                      )
-                    }
+                    onClick={() => removeCondition(condition.id)}
                   >
                     {t("Remove", "삭제")}
                   </button>

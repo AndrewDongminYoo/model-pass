@@ -1,6 +1,8 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { evaluateRules } from "../../eligibility/domain/evaluate-rules";
+import { isAtLeast19 } from "../../eligibility/domain/age";
+import { isWithinMakeupExamAgeLimit } from "../../eligibility/templates/makeup-certification-v2";
 import type {
   AnswerValue,
   EvaluationContext,
@@ -15,11 +17,14 @@ interface EligibilityFormProps {
   answers: Record<string, AnswerValue>;
   onAnswersChange: (answers: Record<string, AnswerValue>) => void;
   onEvaluate: (result: EvaluationResult) => void;
+  birthDate?: string;
+  onBirthDateChange?: (birthDate: string) => void;
 }
 
 interface Question {
   field: string;
   answerType: "boolean" | "number" | "text";
+  label: { en: string; ko: string } | undefined;
 }
 
 export function EligibilityForm({
@@ -28,12 +33,21 @@ export function EligibilityForm({
   answers,
   onAnswersChange,
   onEvaluate,
+  birthDate,
+  onBirthDateChange,
 }: EligibilityFormProps) {
   const { locale, t } = useI18n();
-  const questions = questionsFor(rules);
-  const [errors, setErrors] = useState<Record<string, "boolean" | "answer">>(
-    {},
+  const makeupAgeLimitRule = rules.find(
+    (rule) => rule.field === "isWithinMakeupAgeLimit",
   );
+  const hasMakeupAgeLimit = makeupAgeLimitRule !== undefined;
+  const questions = questionsFor(rules, hasMakeupAgeLimit);
+  const adultRule = hasMakeupAgeLimit
+    ? rules.find((rule) => rule.field === "isAdult")
+    : undefined;
+  const [errors, setErrors] = useState<
+    Record<string, "boolean" | "answer" | "date">
+  >({});
 
   function setAnswer(field: string, value: AnswerValue) {
     setErrors((current) => {
@@ -46,25 +60,89 @@ export function EligibilityForm({
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const nextErrors: Record<string, "boolean" | "answer"> = Object.fromEntries(
-      questions
-        .filter(({ field }) => answers[field] === undefined)
-        .map(({ field, answerType }) => [
-          field,
-          answerType === "boolean" ? "boolean" : "answer",
-        ]),
-    ) as Record<string, "boolean" | "answer">;
+    const nextErrors: Record<string, "boolean" | "answer" | "date"> =
+      Object.fromEntries(
+        questions
+          .filter(({ field }) => answers[field] === undefined)
+          .map(({ field, answerType }) => [
+            field,
+            answerType === "boolean" ? "boolean" : "answer",
+          ]),
+      ) as Record<string, "boolean" | "answer" | "date">;
+    const isWithinAgeLimit = hasMakeupAgeLimit
+      ? isWithinMakeupExamAgeLimit(birthDate ?? "")
+      : undefined;
+    if (isWithinAgeLimit === null) {
+      nextErrors.birthDate = "date";
+    }
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       return;
     }
 
-    onEvaluate(evaluateRules(answers, rules, context));
+    onEvaluate(
+      evaluateRules(
+        {
+          ...answers,
+          ...(isWithinAgeLimit !== undefined && isWithinAgeLimit !== null
+            ? {
+                isAdult: isAtLeast19(birthDate ?? "", new Date()),
+                isWithinMakeupAgeLimit: isWithinAgeLimit,
+              }
+            : {}),
+        },
+        rules,
+        context,
+      ),
+    );
   }
 
   return (
     <form className="surface form-stack" noValidate onSubmit={handleSubmit}>
       <h2>{t("Check eligibility", "지원 조건 확인")}</h2>
+      {hasMakeupAgeLimit && (
+        <div className="field">
+          <p className="helper-text">
+            {adultRule?.question?.[locale]}{" "}
+            {makeupAgeLimitRule.question?.[locale]}{" "}
+            {t(
+              "We calculate this from your date of birth.",
+              "생년월일로 자동 확인합니다.",
+            )}
+          </p>
+          <label htmlFor="makeup-exam-birth-date">
+            {t(
+              "Date of birth (2026 exam age check)",
+              "생년월일 (2026년 시험 연령 확인)",
+            )}
+          </label>
+          <input
+            id="makeup-exam-birth-date"
+            type="date"
+            value={birthDate ?? ""}
+            aria-describedby={
+              errors.birthDate ? "makeup-exam-birth-date-error" : undefined
+            }
+            aria-invalid={errors.birthDate ? true : undefined}
+            onChange={(event) => {
+              setErrors((current) => {
+                const next = { ...current };
+                delete next.birthDate;
+                return next;
+              });
+              onBirthDateChange?.(event.currentTarget.value);
+            }}
+          />
+          {errors.birthDate && (
+            <p id="makeup-exam-birth-date-error">
+              {t(
+                "Enter a valid date of birth.",
+                "올바른 생년월일을 입력해 주세요.",
+              )}
+            </p>
+          )}
+        </div>
+      )}
       {questions.map((question) => {
         const errorId = `${question.field}-eligibility-error`;
         const error = errors[question.field];
@@ -83,7 +161,10 @@ export function EligibilityForm({
               aria-describedby={error ? errorId : undefined}
               aria-invalid={error ? true : undefined}
             >
-              <legend>{humanizeField(question.field, locale)}</legend>
+              <legend>
+                {question.label?.[locale] ??
+                  humanizeField(question.field, locale)}
+              </legend>
               <div className="choice-options">
                 <label className="choice">
                   <input
@@ -115,7 +196,8 @@ export function EligibilityForm({
         return (
           <div className="field" key={question.field}>
             <label htmlFor={inputId}>
-              {humanizeField(question.field, locale)}
+              {question.label?.[locale] ??
+                humanizeField(question.field, locale)}
             </label>
             <input
               id={inputId}
@@ -141,11 +223,16 @@ export function EligibilityForm({
   );
 }
 
-function questionsFor(rules: readonly RuleDefinition[]): Question[] {
+function questionsFor(
+  rules: readonly RuleDefinition[],
+  deriveAdultFromBirthDate: boolean,
+): Question[] {
   const questions = new Map<string, Question>();
   for (const rule of rules) {
     if (
       rule.field.toLowerCase().includes("photo") ||
+      rule.field === "isWithinMakeupAgeLimit" ||
+      (deriveAdultFromBirthDate && rule.field === "isAdult") ||
       questions.has(rule.field)
     ) {
       continue;
@@ -156,6 +243,7 @@ function questionsFor(rules: readonly RuleDefinition[]): Question[] {
       : rule.expected;
     questions.set(rule.field, {
       field: rule.field,
+      label: rule.question,
       answerType:
         typeof expected === "boolean"
           ? "boolean"

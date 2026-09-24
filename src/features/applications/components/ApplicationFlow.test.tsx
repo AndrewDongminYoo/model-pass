@@ -5,6 +5,7 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "../../../app/App";
 import type { PublicOpportunity } from "../api/get-public-opportunity";
+import { makeupCertificationV2Locked } from "../../eligibility/templates/makeup-certification-v2";
 import {
   ApplicationSubmissionError,
   parseApplicationSubmissionHttpError,
@@ -100,6 +101,13 @@ const makeupOpportunity: PublicOpportunity = {
     },
   ],
 };
+const makeupV2Opportunity: PublicOpportunity = {
+  ...makeupOpportunity,
+  startsAt: "2026-12-01T10:00:00.000Z",
+  closesAt: "2026-11-30T10:00:00.000Z",
+  rulesetVersion: 2,
+  rules: makeupCertificationV2Locked("female"),
+};
 const photoOpportunity: PublicOpportunity = {
   ...makeupOpportunity,
   category: "hair_promotion",
@@ -128,6 +136,60 @@ beforeEach(() => {
     allowedActions: ["applicant_confirmed"],
     events: [],
   });
+});
+
+it("checks the 2026 makeup age limit from birth date before showing the application form", async () => {
+  const user = userEvent.setup();
+  render(<ApplicationForm opportunity={makeupV2Opportunity} />);
+  expect(
+    screen.queryByRole("group", {
+      name: "2026년 시험의 출생연도 기준으로 55세 이하인가요?",
+    }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("group", { name: "만 19세 이상인가요?" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByText(/2026년 시험의 출생연도 기준으로 55세 이하인가요\?/),
+  ).toBeVisible();
+  const birthDate = screen.getByLabelText("생년월일 (2026년 시험 연령 확인)");
+  for (const rule of makeupV2Opportunity.rules) {
+    if (rule.field === "isWithinMakeupAgeLimit" || rule.field === "isAdult")
+      continue;
+    const group = screen.getByRole("group", { name: rule.question?.ko });
+    await user.click(
+      within(group).getByLabelText(rule.expected ? "예" : "아니요"),
+    );
+  }
+  await user.type(birthDate, "2010-01-01");
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
+  expect(
+    screen.getByRole("heading", { name: "지원 조건에 맞지 않습니다" }),
+  ).toBeVisible();
+
+  await user.clear(birthDate);
+  await user.type(birthDate, "1970-12-31");
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
+  expect(
+    screen.getByRole("heading", { name: "지원 조건에 맞지 않습니다" }),
+  ).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "지원서 작성하기" }),
+  ).not.toBeInTheDocument();
+
+  await user.clear(birthDate);
+  await user.type(birthDate, "1971-01-01");
+  await user.click(screen.getByRole("button", { name: "지원 조건 확인" }));
+  expect(
+    screen.getByRole("heading", { name: "지원할 수 있습니다" }),
+  ).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "지원서 작성하기" }));
+  expect(
+    screen.getAllByLabelText("생년월일 (2026년 시험 연령 확인)"),
+  ).toHaveLength(1);
+  expect(
+    screen.queryByLabelText("생년월일", { exact: true }),
+  ).not.toBeInTheDocument();
 });
 
 it("keeps a submitted applicant in the waiting state until recruiter selection", async () => {

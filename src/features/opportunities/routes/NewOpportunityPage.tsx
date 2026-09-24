@@ -3,7 +3,6 @@ import { publishOpportunity } from "../api/publish-opportunity";
 import { OpportunityForm } from "../components/OpportunityForm";
 import { OpportunityPreview } from "../components/OpportunityPreview";
 import type { OpportunityDraft } from "../domain/opportunity";
-import { makeupCertificationV1Metadata } from "../../eligibility/templates/makeup-certification-v1";
 import { appNameFor } from "../../../i18n/brand";
 import { useI18n } from "../../../i18n/locale";
 
@@ -27,15 +26,7 @@ export function NewOpportunityPage() {
       </header>
       <OpportunityForm onSubmit={setDraft} />
       {draft && (
-        <OpportunityPreview
-          draft={draft}
-          onPublish={publishOpportunity}
-          applicableExamYear={
-            draft.category === "makeup_certification"
-              ? makeupCertificationV1Metadata.applicableExamYear
-              : undefined
-          }
-        />
+        <OpportunityPreview draft={draft} onPublish={publishOpportunity} />
       )}
     </main>
   );

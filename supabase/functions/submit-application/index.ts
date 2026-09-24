@@ -5,7 +5,12 @@ import type {
   RuleDefinition,
 } from "../../../src/features/eligibility/domain/types.ts";
 import { evaluateRules } from "../../../src/features/eligibility/domain/evaluate-rules.ts";
+import { isAtLeast19 } from "../../../src/features/eligibility/domain/age.ts";
 import { parseRuleDefinitions } from "../../../src/features/eligibility/domain/types.ts";
+import {
+  isWithinMakeupExamAgeLimit,
+  makeupCertificationV2Metadata,
+} from "../../../src/features/eligibility/templates/makeup-certification-v2.ts";
 import type {
   SubmitApplicationInput,
   SubmitApplicationResult,
@@ -196,6 +201,14 @@ export async function submitApplication(
   const evaluatedAnswers = {
     ...parsedInput.answers,
     isAdult: true,
+    ...(opportunity.rulesetId === makeupCertificationV2Metadata.id &&
+    opportunity.rulesetVersion === makeupCertificationV2Metadata.version
+      ? {
+          isWithinMakeupAgeLimit:
+            isWithinMakeupExamAgeLimit(parsedInput.applicant.birthDate) ===
+            true,
+        }
+      : {}),
   };
   const evaluation = evaluateRules(evaluatedAnswers, opportunity.rules, {
     rulesetId: opportunity.rulesetId,
@@ -295,61 +308,6 @@ function canonicalJson(value: unknown): string {
       .join(",")}}`;
   }
   return JSON.stringify(value);
-}
-
-function isAtLeast19(birthDate: string, currentDate: Date): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(birthDate);
-  if (match === null) {
-    return false;
-  }
-
-  const birthYear = Number(match[1]);
-  const birthMonth = Number(match[2]);
-  const birthDay = Number(match[3]);
-  const parsedBirthDate = new Date(
-    Date.UTC(birthYear, birthMonth - 1, birthDay),
-  );
-
-  if (
-    parsedBirthDate.getUTCFullYear() !== birthYear ||
-    parsedBirthDate.getUTCMonth() !== birthMonth - 1 ||
-    parsedBirthDate.getUTCDate() !== birthDay
-  ) {
-    return false;
-  }
-
-  const businessDate = getSeoulDateParts(currentDate);
-  let age = businessDate.year - birthYear;
-  const currentMonth = businessDate.month;
-  const currentDay = businessDate.day;
-  if (
-    currentMonth < birthMonth ||
-    (currentMonth === birthMonth && currentDay < birthDay)
-  ) {
-    age -= 1;
-  }
-
-  return age >= 19;
-}
-
-function getSeoulDateParts(date: Date): {
-  year: number;
-  month: number;
-  day: number;
-} {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const values = new Map(parts.map((part) => [part.type, part.value]));
-
-  return {
-    year: Number(values.get("year")),
-    month: Number(values.get("month")),
-    day: Number(values.get("day")),
-  };
 }
 
 export function createSupabaseDependencies(

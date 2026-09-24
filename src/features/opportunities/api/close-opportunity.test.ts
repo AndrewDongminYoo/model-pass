@@ -48,6 +48,20 @@ it("reads the owned opportunity state before offering selection", async () => {
       closed_at: "2026-09-23T01:00:00.000Z",
       closes_at: "2099-09-24T01:00:00.000Z",
       starts_at: "2099-09-25T01:00:00.000Z",
+      rules_snapshot: [
+        {
+          id: "hair-length",
+          field: "hairLength",
+          operator: "equals",
+          expected: true,
+          effect: "hard_fail",
+          reason: "Long hair required.",
+          question: {
+            en: "Is your hair at least shoulder length?",
+            ko: "현재 머리카락이 어깨 아래까지 내려오나요?",
+          },
+        },
+      ],
     },
     error: null,
   });
@@ -55,6 +69,20 @@ it("reads the owned opportunity state before offering selection", async () => {
   await expect(getRecruiterOpportunityState(opportunityId)).resolves.toEqual({
     status: "closed",
     canSelect: false,
+    rules: [
+      {
+        id: "hair-length",
+        field: "hairLength",
+        operator: "equals",
+        expected: true,
+        effect: "hard_fail",
+        reason: "Long hair required.",
+        question: {
+          en: "Is your hair at least shoulder length?",
+          ko: "현재 머리카락이 어깨 아래까지 내려오나요?",
+        },
+      },
+    ],
   });
   expect(fromMock).toHaveBeenCalledWith("opportunities");
   expect(eqMock).toHaveBeenCalledWith("id", opportunityId);

@@ -91,6 +91,9 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
     () => restoredPendingPhoto?.submissionAttemptId ?? crypto.randomUUID(),
   );
   const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
+  const hasMakeupExamAgeLimit = opportunity.rules.some(
+    (rule) => rule.field === "isWithinMakeupAgeLimit",
+  );
   const [evaluation, setEvaluation] = useState<EvaluationResult>();
   const [showApplication, setShowApplication] = useState(false);
   const [contact, setContact] = useState(initialContactValues);
@@ -338,6 +341,10 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
     value: string | boolean,
   ) {
     setContact((current) => ({ ...current, [field]: value }));
+    if (field === "birthDate" && hasMakeupExamAgeLimit) {
+      setEvaluation(undefined);
+      setShowApplication(false);
+    }
     if (
       field === "displayName" ||
       field === "phone" ||
@@ -519,6 +526,12 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
         answers={answers}
         onAnswersChange={changeAnswers}
         onEvaluate={setEvaluation}
+        birthDate={hasMakeupExamAgeLimit ? contact.birthDate : undefined}
+        onBirthDateChange={
+          hasMakeupExamAgeLimit
+            ? (value) => setContactValue("birthDate", value)
+            : undefined
+        }
       />
       {evaluation ? (
         <EligibilityResult
@@ -544,14 +557,16 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
             error={errors.phone && messageText(errors.phone, t)}
             onChange={(value) => setContactValue("phone", value)}
           />
-          <TextField
-            id="applicant-birth-date"
-            label={t("Date of birth", "생년월일")}
-            type="date"
-            value={contact.birthDate}
-            error={errors.birthDate && messageText(errors.birthDate, t)}
-            onChange={(value) => setContactValue("birthDate", value)}
-          />
+          {!hasMakeupExamAgeLimit && (
+            <TextField
+              id="applicant-birth-date"
+              label={t("Date of birth", "생년월일")}
+              type="date"
+              value={contact.birthDate}
+              error={errors.birthDate && messageText(errors.birthDate, t)}
+              onChange={(value) => setContactValue("birthDate", value)}
+            />
+          )}
           <CheckboxField
             id="current-application-consent"
             label={t(

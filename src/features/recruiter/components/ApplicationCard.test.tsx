@@ -401,6 +401,35 @@ it("renders deterministic evidence, private photos, and factual attendance witho
   ).toHaveAttribute("href", "https://storage.test/private-photo");
 });
 
+it("shows the stored condition question beside the recruiter's answer", () => {
+  render(
+    <ApplicationCard
+      application={{
+        ...application("Applicant one", "2026-09-22T03:00:00.000Z"),
+        answers: [{ field: "hairLength", value: true }],
+      }}
+      rules={[
+        {
+          id: "hair-length",
+          field: "hairLength",
+          operator: "equals",
+          expected: true,
+          effect: "hard_fail",
+          reason: "Long hair required.",
+          question: {
+            en: "Is your hair at least shoulder length?",
+            ko: "현재 머리카락이 어깨 아래까지 내려오나요?",
+          },
+        },
+      ]}
+    />,
+  );
+
+  expect(
+    screen.getByText("현재 머리카락이 어깨 아래까지 내려오나요?: 예"),
+  ).toBeVisible();
+});
+
 it("renders recruiter evidence in English when the English locale is selected", () => {
   // Production break: hardcoding Korean labels conceals the stored deterministic reason and boolean answer from English-speaking recruiters.
   localStorage.setItem("model-pass-locale", "en");

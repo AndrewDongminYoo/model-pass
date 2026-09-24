@@ -40,6 +40,11 @@ html {
   background: var(--color-canvas);
 }
 
+html:lang(ko) {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
 body {
   min-width: 320px;
   min-height: 100vh;
@@ -491,7 +496,10 @@ button:disabled {
 }
 
 .choice-card legend {
-  padding: 0 0.35rem;
+  float: left;
+  width: 100%;
+  margin-bottom: 0.35rem;
+  padding: 0;
   font-weight: 750;
 }
 

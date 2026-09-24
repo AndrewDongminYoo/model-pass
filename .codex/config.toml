@@ -9,3 +9,6 @@ client_id = "mcp-gateway"
 
 [mcp_servers.apps-in-toss-docs]
 url = "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
+
+[mcp_servers.supabase]
+url = "https://mcp.supabase.com/mcp?project_ref=cnejteecdqxwbucghzgm&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching"

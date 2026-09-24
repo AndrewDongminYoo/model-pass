@@ -10,6 +10,10 @@
     "app-in-toss-docs": {
       "type": "http",
       "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
+    },
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=cnejteecdqxwbucghzgm&features=docs%2Caccount%2Cdatabase%2Cdebugging%2Cdevelopment%2Cfunctions%2Cbranching"
     }
   }
 }

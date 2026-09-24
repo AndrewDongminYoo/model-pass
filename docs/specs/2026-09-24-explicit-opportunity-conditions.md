@@ -3,7 +3,7 @@
 ## Status
 
 The operator approved the design direction in conversation on 2026-09-24.
-This specification defines the intended behavior; implementation has not started.
+This specification defines the intended behavior for the implementation in progress.
 It extends the product specification in `docs/specs/product.md` without changing the pilot's 19+ boundary, recruiter-led selection, or prohibition on candidate ranking.
 
 ## Problem and Outcome
@@ -21,7 +21,8 @@ Answers remain self-reported unless a separate job-scoped photo or recruiter rev
 - A category loads a versioned template with locked platform or verified exam rules and editable job-specific condition suggestions.
 - The 19+ platform rule cannot be changed or removed by a recruiter.
 - An exam rule may be locked only after its source and applicable year have been verified against a current primary source; its source and version remain visible in the template metadata.
-- A makeup model's required sex is an explicit recruiter-supplied parameter of a non-removable exam condition, not a hidden generic question.
+- A makeup model's required sex is an explicit recruiter-supplied, non-removable opportunity condition, not a claim that the official exam requires a particular sex.
+- The 2026 Q-net score-deduction cases are review items rather than automatic failures; tattoos and henna are not exclusions.
 - Recruiters may edit, add, disable, or remove job-specific conditions before publication.
 - Published conditions are immutable; an incorrect published opportunity must be closed and replaced rather than edited in place.
 - A preferred condition never blocks an application and never produces a candidate score, rank, or automatic selection.
@@ -33,7 +34,7 @@ Selecting hair promotion or makeup certification loads that category's template 
 Locked rules are displayed as read-only cards with their source or platform rationale.
 Editable suggestions are draft cards, not active published rules until the recruiter supplies a concrete applicant-facing question and an expected yes or no answer.
 For hair, the suggestions cover current length, current style, recent dye, bleach, perm, target style acceptance, and availability where applicable.
-For makeup, verified exam restrictions remain locked while the required-sex value is explicitly selected and any additional job-specific conditions remain editable.
+For makeup, verified exam restrictions remain locked while the recruiter explicitly selects the model sex and may add job-specific conditions.
 
 Each editable condition has one applicant-facing yes/no question, one expected answer, and a choice between required and preferred.
 The recruiter can add a custom condition or remove an irrelevant suggestion.
@@ -63,6 +64,8 @@ The public opportunity endpoint returns the stored question and rule snapshot.
 The applicant form renders questions from that snapshot rather than synthesizing vague labels from field names.
 The applicant's answer is submitted against the opportunity ID and the same snapshot version.
 The submission server reloads the stored snapshot and reevaluates the answers; it never trusts a client-computed eligibility result.
+For the 2026 makeup template, the server derives the official upper-age condition from the applicant's birth year instead of trusting a self-reported answer.
+The applicant supplies birth date during the local condition check for that template, so the first eligibility result derives both the 19+ platform boundary and the exam upper bound before contact submission.
 An unmet required rule is a `hard_fail` and prevents submission.
 An unmet preferred rule uses `needs_review`, leaves the applicant eligible, and records the answer for recruiter review.
 All applicant answers remain visible to the recruiter in submission order, without a preference score or rank.
@@ -74,9 +77,10 @@ Before rollout, a read-only production preflight checks whether published opport
 If any exist, deployment pauses for an operator-approved close-and-repost or other explicit treatment; this feature does not automatically change or block their live application links.
 Historical applications retain their original snapshots for audit.
 
-The current makeup template metadata names 2021 as its applicable exam year.
-Implementation must verify the current primary exam source and record its URL and access date before promoting makeup rules as locked current requirements.
-If that verification cannot be completed, the release must not claim that the makeup template represents current official requirements.
+The historical version 1 makeup template names 2021 as its applicable exam year.
+The version 2 source check is recorded in `docs/notes/2026-09-24-makeup-exam-source-check.md` against the 2026 Q-net notice accessed on 2026-09-24.
+Future exam years require a fresh source check and template version before claiming current official requirements.
+The publication server rejects a makeup appointment whose Seoul-local start year is not the template's verified exam year.
 
 ## Acceptance Criteria
 

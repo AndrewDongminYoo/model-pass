@@ -96,7 +96,7 @@ Locked rules originate only from trusted templates.
 
 - [ ] Add failing domain tests for a missing question, missing expected answer, duplicate ID or field, unsupported effect/operator, locked ID or field reuse, missing makeup sex, stale template version, and tampered locked rule.
       Include a preferred `expected: false` case, a source-backed makeup locked-rule case, and preservation of the non-answerable hair-photo rule.
-- [ ] Run `pnpm test -- src/features/eligibility/domain/opportunity-conditions.test.ts src/features/eligibility/templates/templates.test.ts` and observe the intended failures.
+- [ ] Run `pnpm exec vitest run src/features/eligibility/domain/opportunity-conditions.test.ts src/features/eligibility/templates/templates.test.ts` and observe the intended failures.
 - [ ] Implement the smallest shared builder and version 2 templates.
       The builder must never accept locked rules from the client as authority; it must reconstruct them and compare the submitted preview `rules` array with the canonical result, without adding a separate hash or token.
       Keep the existing general evaluator able to read version 1 snapshots.
@@ -127,7 +127,7 @@ Preview shows the exact localized questions and classification that will be publ
 
 - [ ] Add failing UI tests for both category templates, locked-card immutability, suggestion edit/remove, custom add, required/preferred switch, makeup sex omission, duplicate/blank question errors, and a locale switch that leaves authored text unchanged.
       Assert exact question text in preview, not just a non-empty list.
-- [ ] Run `pnpm test -- src/features/opportunities/components/OpportunityForm.test.tsx src/features/opportunities/components/OpportunityPreview.test.tsx` and observe the intended failures.
+- [ ] Run `pnpm exec vitest run src/features/opportunities/components/OpportunityForm.test.tsx src/features/opportunities/components/OpportunityPreview.test.tsx` and observe the intended failures.
 - [ ] Implement the editor using existing React state and i18n conventions.
       Keep IDs and fields stable during draft edits; use a new identifier for newly added cards.
       Remove orphaned static template imports and validation messages made obsolete by this change.
@@ -169,7 +169,7 @@ Historical version 1 applications keep their existing fallback labels.
 
 - [ ] Add failing public-read tests for preserving the stored question, applicant tests asserting exact Korean and English question text, submission tests for required rejection/preference acceptance and forged snapshot mismatch, and recruiter tests asserting the custom question beside its answer.
       Ensure the recruiter application query retrieves the opportunity's rule snapshot through its existing authorized path rather than trusting the applicant payload.
-- [ ] Run `pnpm test -- src/features/applications/components/ApplicationFlow.test.tsx src/features/applications/api/application-photos.test.ts src/features/recruiter/components/ApplicationCard.test.tsx` and the focused Deno tests below; observe the intended failures.
+- [ ] Run `pnpm exec vitest run src/features/applications/components/ApplicationFlow.test.tsx src/features/applications/api/application-photos.test.ts src/features/recruiter/components/ApplicationCard.test.tsx` and the focused Deno tests below; observe the intended failures.
 
 ```sh
 deno test -A --sloppy-imports --frozen-lockfile --config supabase/functions/get-public-opportunity/deno.json --lock supabase/functions/get-public-opportunity/deno.lock supabase/functions/get-public-opportunity/index.test.ts
@@ -191,7 +191,7 @@ Update the new spec or plan if implementation uncovers an approved contract chan
 - [ ] Write an E2E case that publishes a concrete required hair condition and a preferred condition, opens the applicant link, sees the exact questions, submits an unmet preference, and finds the answer as a recruiter review item.
       Add a makeup case that proves the required-sex parameter and locked restriction cannot be bypassed.
       Make the new test fail before implementation is complete.
-- [ ] Run `pnpm test:e2e -- e2e/recruiter-publication.spec.ts e2e/hair-application.spec.ts e2e/makeup-application.spec.ts`, then `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm format:check`, and the repository's declared Deno and database checks.
+- [ ] Run `pnpm exec playwright test e2e/recruiter-publication.spec.ts e2e/hair-application.spec.ts e2e/makeup-application.spec.ts`, then `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, `pnpm format:check`, and the repository's declared Deno and database checks.
       Use `trunk check --all` if available in the current environment.
       Document any unavailable gate rather than claiming it passed.
 - [ ] In a rendered browser, inspect 320px and 390px recruiter, preview, applicant, and recruiter-answer screens.

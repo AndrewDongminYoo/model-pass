@@ -12,7 +12,7 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:4173",
   },
   webServer: {
-    command: "pnpm build && pnpm vite preview --host 127.0.0.1 --port 4173",
+    command: "pnpm build:web && pnpm vite preview --host 127.0.0.1 --port 4173",
     env: {
       VITE_SUPABASE_URL: localSupabase.apiUrl,
       VITE_SUPABASE_ANON_KEY: localSupabase.anonKey,

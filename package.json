@@ -4,7 +4,8 @@
   "description": "",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build && ait build",
+    "build": "tsc -b && VITE_APP_SURFACE=ait vite build && ait build",
+    "build:web": "tsc -b && VITE_APP_SURFACE=web vite build",
     "lint": "eslint . --max-warnings=0",
     "format:check": "prettier --check .",
     "test": "vitest run",

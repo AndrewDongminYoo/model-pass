@@ -52,3 +52,5 @@ jobs:
       - run: supabase test db
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      - name: Test Apps in Toss link entry
+        run: MODEL_PASS_E2E_SURFACE=ait pnpm exec playwright test e2e/ait-link-entry.spec.ts

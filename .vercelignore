@@ -1,0 +1,7 @@
+.env
+.env.*
+/supabase/
+node_modules/
+dist/
+*.ait
+test-results/

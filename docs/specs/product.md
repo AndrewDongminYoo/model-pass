@@ -6,7 +6,7 @@ Working title: Model Pass.
 Product direction approved in conversation on 2026-09-22.
 This document describes the web application and a proposed Apps in Toss distribution path.
 The interface defaults to Korean and supports switching all application screens to English, with the choice retained across visits.
-On 2026-09-23, the operator prioritized Apps in Toss preparation; the existing service pre-review and legal gates still apply before platform integration or launch.
+On 2026-09-23, the operator prioritized Apps in Toss preparation; service pre-review and legal classification remain gates for public launch, not local implementation or test uploads.
 
 ## Product Thesis
 

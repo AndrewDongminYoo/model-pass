@@ -277,6 +277,12 @@ export function OpportunityPreview({
                 (locale === "ko" ? koreanRuleReason(rule.reason) : rule.reason)}
             </label>
           ))}
+          <p>
+            {t(
+              "Published opportunities appear on the app home screen until applications close. Visitors without a link can see the title, schedule, location, and benefit.",
+              "게시한 공고는 지원 마감 전까지 앱 첫 화면에 공개됩니다. 링크가 없는 사람도 제목·일정·장소·혜택을 볼 수 있습니다.",
+            )}
+          </p>
           <button
             type="button"
             disabled={!allHardRulesConfirmed || publishingDraft === draft}

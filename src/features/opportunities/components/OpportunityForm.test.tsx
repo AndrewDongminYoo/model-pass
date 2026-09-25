@@ -602,6 +602,11 @@ it("renders applicant and recruiter-review links after publication", async () =>
   };
 
   render(<OpportunityPreview draft={draft} onPublish={onPublish} />);
+  expect(
+    screen.getByText(
+      "게시한 공고는 지원 마감 전까지 앱 첫 화면에 공개됩니다. 링크가 없는 사람도 제목·일정·장소·혜택을 볼 수 있습니다.",
+    ),
+  ).toBeVisible();
   await user.click(
     screen.getByLabelText("필수 조건 확인: 만 19세 이상만 지원할 수 있습니다."),
   );

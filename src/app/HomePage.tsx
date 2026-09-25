@@ -1,5 +1,9 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import {
+  listPublicOpportunities,
+  type PublicOpportunitySummary,
+} from "../features/opportunities/api/list-public-opportunities";
 import { appNameFor } from "../i18n/brand";
 import { useI18n } from "../i18n/locale";
 import { applicantPathFromLink } from "./opportunity-link";
@@ -10,6 +14,26 @@ export function HomePage() {
   const isAit = import.meta.env.VITE_APP_SURFACE === "ait";
   const [opportunityLink, setOpportunityLink] = useState("");
   const [invalidLink, setInvalidLink] = useState(false);
+  const [refreshIndex, setRefreshIndex] = useState(0);
+  const [opportunities, setOpportunities] = useState<
+    | { status: "loading" }
+    | { status: "error" }
+    | { status: "loaded"; items: PublicOpportunitySummary[] }
+  >({ status: "loading" });
+
+  useEffect(() => {
+    let active = true;
+    void listPublicOpportunities()
+      .then((items) => {
+        if (active) setOpportunities({ status: "loaded", items });
+      })
+      .catch(() => {
+        if (active) setOpportunities({ status: "error" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [refreshIndex]);
 
   function openOpportunity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,17 +54,93 @@ export function HomePage() {
         </p>
         <h1 className="brand-name">{appNameFor(locale)}</h1>
         <p className="lede">
-          {isAit
-            ? t(
-                "Open a model opportunity with the link your recruiter shared.",
-                "모집자가 보낸 링크로 시험 모델 공고를 확인하세요.",
-              )
-            : t(
-                "Clear procedure and compensation details for models, and organized requirements for recruiters.",
-                "모델에게는 시술과 보상 조건을 분명하게, 모집자에게는 확인할 조건을 빠짐없이 보여줍니다.",
-              )}
+          {t(
+            "Explore current model opportunities and check the exact requirements before applying.",
+            "진행 중인 시험 모델 공고를 보고, 조건을 확인한 뒤 지원하세요.",
+          )}
         </p>
       </header>
+      <section
+        className="opportunity-feed"
+        aria-labelledby="available-opportunities-heading"
+      >
+        <div className="opportunity-feed__heading">
+          <div>
+            <p className="eyebrow">{t("Open now", "지금 참여 가능")}</p>
+            <h2 id="available-opportunities-heading">
+              {t("Available opportunities", "지금 지원 가능한 공고")}
+            </h2>
+          </div>
+          <p>
+            {t(
+              "Each opportunity sets its own requirements and benefits.",
+              "공고마다 지원 조건과 혜택이 다릅니다.",
+            )}
+          </p>
+        </div>
+        {opportunities.status === "loading" && (
+          <p className="surface opportunity-feed__message" role="status">
+            {t("Loading opportunities…", "공고를 불러오고 있습니다…")}
+          </p>
+        )}
+        {opportunities.status === "error" && (
+          <div className="surface opportunity-feed__message">
+            <p role="alert">
+              {t(
+                "Could not load opportunities.",
+                "공고 목록을 불러오지 못했습니다.",
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setOpportunities({ status: "loading" });
+                setRefreshIndex((current) => current + 1);
+              }}
+            >
+              {t("Try again", "다시 시도")}
+            </button>
+          </div>
+        )}
+        {opportunities.status === "loaded" &&
+          (opportunities.items.length === 0 ? (
+            <p className="surface opportunity-feed__message" role="status">
+              {t(
+                "There are no open opportunities right now.",
+                "지금 열려 있는 공고가 없습니다.",
+              )}
+            </p>
+          ) : (
+            <ul className="opportunity-list">
+              {opportunities.items.map((opportunity) => (
+                <li className="opportunity-card" key={opportunity.id}>
+                  <p className="opportunity-card__category">
+                    {opportunity.category === "hair_promotion"
+                      ? t("Hair promotion exam", "헤어 승급 시험")
+                      : t("Makeup certification exam", "메이크업 자격 시험")}
+                  </p>
+                  <h3>{opportunity.title}</h3>
+                  <p className="opportunity-card__details">
+                    <span>{opportunity.venueDistrict}</span>
+                    <span aria-hidden="true">·</span>
+                    <time dateTime={opportunity.startsAt}>
+                      {formatDateTime(opportunity.startsAt, locale)}
+                    </time>
+                  </p>
+                  <p className="opportunity-card__benefit">
+                    {formatBenefit(opportunity, locale)}
+                  </p>
+                  <Link
+                    className="button-link"
+                    to={`/opportunities/${opportunity.id}/apply`}
+                  >
+                    {t("Check requirements and apply", "지원 조건 확인하기")}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ))}
+      </section>
       <div className="home-grid">
         <section
           className="surface home-card"
@@ -48,25 +148,25 @@ export function HomePage() {
         >
           <h2 id="applicant-heading">
             {isAit
-              ? t("Apply with an opportunity link", "공고 링크로 지원하기")
-              : t("Want to be a model?", "모델로 참여하고 싶나요?")}
+              ? t("Have a shared link?", "공유받은 공고 링크가 있나요?")
+              : t("Have an opportunity link?", "공고 링크를 받으셨나요?")}
           </h2>
           <p>
             {isAit
               ? t(
-                  "Paste the link to see the procedure, schedule, benefits, and application requirements.",
-                  "링크를 붙여넣으면 시술 내용과 일정, 혜택, 지원 조건을 볼 수 있습니다.",
+                  "Open a specific opportunity using the link your recruiter shared.",
+                  "모집자가 공유한 링크로 해당 공고를 바로 확인할 수 있습니다.",
                 )
               : t(
-                  "Open a recruiter's opportunity link to check the schedule and benefits. Review the requirements before applying.",
-                  "모집자가 공유한 공고 링크에서 일정과 혜택을 확인하고 지원할 수 있습니다. 지원 전에 필요한 조건부터 확인해 보세요.",
+                  "A shared link also opens a specific opportunity directly.",
+                  "공유받은 링크가 있다면 해당 공고를 바로 열 수 있습니다.",
                 )}
           </p>
           {!isAit && (
             <p className="home-note">
               {t(
-                "For now, applications are available only through a shared opportunity link.",
-                "지금은 공고 링크를 통해서만 지원할 수 있습니다.",
+                "You can also choose from the opportunities above.",
+                "위 공고에서도 지원 조건을 확인할 수 있습니다.",
               )}
             </p>
           )}
@@ -127,4 +227,26 @@ export function HomePage() {
       </div>
     </main>
   );
+}
+
+function formatDateTime(value: string, locale: "ko" | "en"): string {
+  return new Intl.DateTimeFormat(locale === "ko" ? "ko-KR" : "en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatBenefit(
+  opportunity: PublicOpportunitySummary,
+  locale: "ko" | "en",
+): string {
+  if (opportunity.benefit.type === "cash") {
+    const amount = opportunity.benefit.amount.toLocaleString(
+      locale === "ko" ? "ko-KR" : "en-US",
+    );
+    return locale === "ko"
+      ? `${amount}원 · ${opportunity.benefit.description}`
+      : `KRW ${amount} · ${opportunity.benefit.description}`;
+  }
+  return opportunity.benefit.description;
 }

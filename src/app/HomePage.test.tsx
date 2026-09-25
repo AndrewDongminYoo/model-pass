@@ -1,12 +1,21 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { HomePage } from "./HomePage";
 
 const opportunityId = "00000000-0000-4000-8000-000000000123";
+const { listMock } = vi.hoisted(() => ({ listMock: vi.fn() }));
+
+vi.mock("../features/opportunities/api/list-public-opportunities", () => ({
+  listPublicOpportunities: listMock,
+}));
 
 afterEach(() => vi.unstubAllEnvs());
+beforeEach(() => {
+  listMock.mockReset();
+  listMock.mockResolvedValue([]);
+});
 
 function renderAitHome() {
   vi.stubEnv("VITE_APP_SURFACE", "ait");
@@ -70,4 +79,58 @@ it("accepts a miniapp deep link", async () => {
   expect(
     screen.getByRole("heading", { name: "Opened opportunity" }),
   ).toBeVisible();
+});
+
+it("opens an active opportunity from the home card without a shared link", async () => {
+  // Production break: the first-time visitor sees a card but cannot enter the applicant flow.
+  listMock.mockResolvedValue([
+    {
+      id: opportunityId,
+      category: "hair_promotion",
+      title: "Gangnam hair promotion model",
+      startsAt: "2026-09-29T03:00:00.000Z",
+      closesAt: "2026-09-28T03:00:00.000Z",
+      venueDistrict: "서울 강남구",
+      expectedMinutes: 120,
+      benefit: { type: "procedure", description: "Free haircut" },
+    },
+  ]);
+  const user = userEvent.setup();
+  renderAitHome();
+
+  expect(await screen.findByText("Gangnam hair promotion model")).toBeVisible();
+  expect(screen.getByText("서울 강남구")).toBeVisible();
+  await user.click(screen.getByRole("link", { name: "지원 조건 확인하기" }));
+
+  expect(
+    screen.getByRole("heading", { name: "Opened opportunity" }),
+  ).toBeVisible();
+});
+
+it("explains an empty list while retaining link entry", async () => {
+  // Production break: an empty result leaves the home screen looking broken.
+  renderAitHome();
+
+  expect(
+    await screen.findByText("지금 열려 있는 공고가 없습니다."),
+  ).toBeVisible();
+  expect(screen.getByLabelText("공고 링크")).toBeVisible();
+});
+
+it("lets the visitor retry a failed public list read", async () => {
+  // Production break: a transient network error strands the visitor on a dead-end message.
+  listMock.mockRejectedValueOnce(new Error("Network unavailable"));
+  listMock.mockResolvedValueOnce([]);
+  const user = userEvent.setup();
+  renderAitHome();
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "공고 목록을 불러오지 못했습니다.",
+  );
+  await user.click(screen.getByRole("button", { name: "다시 시도" }));
+
+  expect(
+    await screen.findByText("지금 열려 있는 공고가 없습니다."),
+  ).toBeVisible();
+  expect(listMock).toHaveBeenCalledTimes(2);
 });

@@ -40,6 +40,11 @@ html {
   background: var(--color-canvas);
 }
 
+html:lang(ko) {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
 body {
   min-width: 320px;
   min-height: 100vh;
@@ -292,6 +297,69 @@ li + li {
   margin-bottom: 0.15rem;
 }
 
+.condition-editor,
+.condition-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.condition-editor {
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.condition-editor h3,
+.condition-editor h4,
+.condition-card p {
+  margin-bottom: 0;
+}
+
+.condition-card {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+
+.condition-card--locked {
+  gap: 0.3rem;
+  background: #fbf7f2;
+}
+
+.condition-card__badge {
+  width: fit-content;
+  color: var(--color-muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.condition-card__heading,
+.condition-card__controls {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.condition-card__heading {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.condition-card__controls {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.condition-suggestions {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.condition-suggestions .button-row {
+  flex-wrap: wrap;
+}
+
 .field {
   display: grid;
   gap: 0.45rem;
@@ -428,7 +496,10 @@ button:disabled {
 }
 
 .choice-card legend {
-  padding: 0 0.35rem;
+  float: left;
+  width: 100%;
+  margin-bottom: 0.35rem;
+  padding: 0;
   font-weight: 750;
 }
 
@@ -615,6 +686,10 @@ button:disabled {
 
   .button-row > button {
     flex: 1 1 12rem;
+  }
+
+  .condition-card__controls {
+    grid-template-columns: 1fr;
   }
 }
 

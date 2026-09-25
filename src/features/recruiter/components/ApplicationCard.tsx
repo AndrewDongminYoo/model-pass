@@ -12,15 +12,18 @@ import {
 } from "../../applications/api/attendance";
 import { useI18n } from "../../../i18n/locale";
 import { localizedRuleReason } from "../../eligibility/presentation/ko";
+import type { RuleDefinition } from "../../eligibility/domain/types";
 
 interface ApplicationCardProps {
   application: RecruiterApplication;
   selectionAllowed?: boolean;
+  rules?: readonly RuleDefinition[];
 }
 
 export function ApplicationCard({
   application,
   selectionAllowed = true,
+  rules = [],
 }: ApplicationCardProps) {
   const { locale, t } = useI18n();
   const { opportunityId } = useParams<{ opportunityId: string }>();
@@ -94,6 +97,11 @@ export function ApplicationCard({
     ...application.evaluation.reviews,
     ...application.evaluation.reminders,
   ];
+  const questionByField = new Map(
+    rules
+      .filter((rule) => rule.question)
+      .map((rule) => [rule.field, rule.question]),
+  );
 
   return (
     <article className="surface application-card">
@@ -146,8 +154,9 @@ export function ApplicationCard({
         <ul>
           {application.answers.map((answer) => (
             <li key={answer.field}>
-              {answerFieldLabel(answer.field, t)}:{" "}
-              {displayValue(answer.value, t)}
+              {questionByField.get(answer.field)?.[locale] ??
+                answerFieldLabel(answer.field, t)}
+              : {displayValue(answer.value, t)}
             </li>
           ))}
         </ul>

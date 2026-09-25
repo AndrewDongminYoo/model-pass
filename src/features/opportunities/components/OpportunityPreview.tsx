@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { makeupCertificationV1Metadata } from "../../eligibility/templates/makeup-certification-v1";
+import { makeupCertificationV2Metadata } from "../../eligibility/templates/makeup-certification-v2";
 import { koreanRuleReason } from "../../eligibility/presentation/ko";
 import { useI18n } from "../../../i18n/locale";
 import type { AppLocale } from "../../../i18n/brand";
@@ -15,15 +16,17 @@ interface OpportunityPreviewProps {
   ) => Promise<OpportunityPublicationResult>;
 }
 
-function ruleReasons(
+function ruleTexts(
   draft: OpportunityDraft,
   effect: "hard_fail" | "needs_review" | "reminder",
   locale: AppLocale,
 ) {
   return draft.rules
     .filter((rule) => rule.effect === effect)
-    .map((rule) =>
-      locale === "ko" ? koreanRuleReason(rule.reason) : rule.reason,
+    .map(
+      (rule) =>
+        rule.question?.[locale] ??
+        (locale === "ko" ? koreanRuleReason(rule.reason) : rule.reason),
     );
 }
 
@@ -63,9 +66,9 @@ function previewText(
             : `Applicable exam year: ${applicableExamYear}`,
         ]
       : []),
-    `${isKorean ? "필수 조건" : "Hard rules"}: ${ruleReasons(draft, "hard_fail", locale).join("; ")}`,
-    `${isKorean ? "검토 항목" : "Review items"}: ${ruleReasons(draft, "needs_review", locale).join("; ")}`,
-    `${isKorean ? "방문 전 확인" : "Reminders"}: ${ruleReasons(draft, "reminder", locale).join("; ")}`,
+    `${isKorean ? "필수 조건" : "Hard rules"}: ${ruleTexts(draft, "hard_fail", locale).join("; ")}`,
+    `${isKorean ? "검토 항목" : "Review items"}: ${ruleTexts(draft, "needs_review", locale).join("; ")}`,
+    `${isKorean ? "방문 전 확인" : "Reminders"}: ${ruleTexts(draft, "reminder", locale).join("; ")}`,
   ].join("\n");
 }
 
@@ -90,7 +93,10 @@ export function OpportunityPreview({
     useState<OpportunityDraft>();
   const [publishingDraft, setPublishingDraft] = useState<OpportunityDraft>();
   const examYear =
-    applicableExamYear ?? makeupCertificationV1Metadata.applicableExamYear;
+    applicableExamYear ??
+    (draft.rulesetVersion >= 2
+      ? makeupCertificationV2Metadata.applicableExamYear
+      : makeupCertificationV1Metadata.applicableExamYear);
   const confirmed = confirmedDraft === draft;
   const hardRules = draft.rules.filter((rule) => rule.effect === "hard_fail");
   const confirmedHardRuleIds =
@@ -182,17 +188,17 @@ export function OpportunityPreview({
       <div className="rule-grid">
         <RuleList
           heading={t("Hard rules", "필수 조건")}
-          reasons={ruleReasons(draft, "hard_fail", locale)}
+          reasons={ruleTexts(draft, "hard_fail", locale)}
           emptyMessage={t("None.", "해당 항목이 없습니다.")}
         />
         <RuleList
           heading={t("Review items", "검토 항목")}
-          reasons={ruleReasons(draft, "needs_review", locale)}
+          reasons={ruleTexts(draft, "needs_review", locale)}
           emptyMessage={t("None.", "해당 항목이 없습니다.")}
         />
         <RuleList
           heading={t("Reminders", "방문 전 확인")}
-          reasons={ruleReasons(draft, "reminder", locale)}
+          reasons={ruleTexts(draft, "reminder", locale)}
           emptyMessage={t("None.", "해당 항목이 없습니다.")}
         />
       </div>
@@ -248,7 +254,8 @@ export function OpportunityPreview({
                 }
               />
               {t("Confirm hard rule", "필수 조건 확인")}:{" "}
-              {locale === "ko" ? koreanRuleReason(rule.reason) : rule.reason}
+              {rule.question?.[locale] ??
+                (locale === "ko" ? koreanRuleReason(rule.reason) : rule.reason)}
             </label>
           ))}
           <button

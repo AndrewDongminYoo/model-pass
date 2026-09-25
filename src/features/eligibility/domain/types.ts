@@ -7,11 +7,17 @@ export type AnswerValue = string | number | boolean | null;
 export type RuleOperator =
   "equals" | "not_equals" | "one_of" | "none_of" | "minimum" | "maximum";
 
+export interface ApplicantQuestion {
+  en: string;
+  ko: string;
+}
+
 interface BaseRuleDefinition {
   id: string;
   field: string;
   effect: RuleEffect;
   reason: string;
+  question?: ApplicantQuestion;
 }
 
 export type RuleDefinition =
@@ -63,6 +69,7 @@ const baseRuleDefinitionSchema = z.object({
   field: z.string(),
   effect: z.enum(["hard_fail", "needs_review", "reminder"]),
   reason: z.string(),
+  question: z.object({ en: z.string(), ko: z.string() }).strict().optional(),
 });
 
 const ruleDefinitionSchema = z.discriminatedUnion("operator", [

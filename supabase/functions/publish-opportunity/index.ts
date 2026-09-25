@@ -4,6 +4,12 @@ import {
   parseRuleDefinitions,
   type RuleDefinition,
 } from "../../../src/features/eligibility/domain/types.ts";
+import {
+  assertCanonicalOpportunityRules,
+  editableConditionSchema,
+  type EditableCondition,
+} from "../../../src/features/eligibility/domain/opportunity-conditions.ts";
+import { isWithinMakeupExamYear } from "../../../src/features/eligibility/templates/makeup-certification-v2.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Headers":
@@ -29,6 +35,8 @@ interface OpportunityDraft {
   rulesetId: string;
   rulesetVersion: number;
   rules: RuleDefinition[];
+  conditions?: EditableCondition[];
+  requiredModelSex?: "female" | "male";
 }
 
 function isFutureDate(value: string): boolean {
@@ -67,6 +75,8 @@ const publicationDraftSchema = z
     rulesetId: z.string().min(1),
     rulesetVersion: z.number().int().positive(),
     rules: rulesSchema,
+    conditions: z.array(editableConditionSchema).optional(),
+    requiredModelSex: z.enum(["female", "male"]).optional(),
   })
   .strict()
   .refine(
@@ -125,10 +135,36 @@ export function createPublishOpportunityHandler(
       }
 
       const input = publicationInputSchema.parse(await request.json());
-      assertEveryHardRuleConfirmed(input.draft, input.confirmedHardRuleIds);
+      if (
+        input.draft.category === "makeup_certification" &&
+        !isWithinMakeupExamYear(input.draft.startsAt)
+      ) {
+        throw new PublicationRequestError(
+          "This makeup template applies only to 2026 exam dates.",
+          400,
+        );
+      }
+      let canonicalRules: RuleDefinition[];
+      try {
+        canonicalRules = assertCanonicalOpportunityRules({
+          category: input.draft.category,
+          rulesetId: input.draft.rulesetId,
+          rulesetVersion: input.draft.rulesetVersion,
+          conditions: input.draft.conditions ?? [],
+          requiredModelSex: input.draft.requiredModelSex,
+          rules: input.draft.rules,
+        });
+      } catch {
+        throw new PublicationRequestError(
+          "Opportunity conditions are invalid.",
+          400,
+        );
+      }
+      const canonicalDraft = { ...input.draft, rules: canonicalRules };
+      assertEveryHardRuleConfirmed(canonicalDraft, input.confirmedHardRuleIds);
       const opportunityId = await dependencies.persistOpportunity({
         recruiterId,
-        draft: input.draft,
+        draft: canonicalDraft,
         confirmedHardRuleIds: input.confirmedHardRuleIds,
       });
       return jsonResponse(

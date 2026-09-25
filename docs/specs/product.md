@@ -94,8 +94,10 @@ Hair rules are recruiter-configurable because salon promotion requirements vary.
 The initial hair template includes current length, current style, recent dye, recent bleach, recent perm, willingness to accept the target style, and schedule availability.
 
 Makeup rules are versioned by exam year and source.
-The initial makeup template includes the adult-only product boundary, same-sex requirement supplied by the recruiter, permanent or semi-permanent eyebrow, eyeliner, and lip procedures, eyelash extensions, visible tattoos or henna, visible nail art, lenses, accessories, prior makeup, schedule availability, and identity-document reminders.
-Removable day-of conditions such as makeup, lenses, and accessories are reminders unless the recruiter marks a current condition as incompatible.
+The historical version 1 template included a sex condition, permanent or semi-permanent eyebrow, eyeliner, and lip procedures, eyelash extensions, and tattoos or henna as hard failures; that snapshot remains readable but is not the current exam template.
+The 2026 version 2 template keeps the product's 19+ boundary and the exam's upper-age bound, labels model sex as a recruiter-specified opportunity condition, treats official score-deduction cases as recruiter review items, and does not exclude tattoos or henna.
+Removable day-of conditions such as makeup, lenses, accessories, and visible nail art are reminders.
+The source comparison and operator decision are recorded in `docs/notes/2026-09-24-makeup-exam-source-check.md`.
 
 Official makeup rules must be rechecked against the applicable exam notice before each ruleset version is published.
 

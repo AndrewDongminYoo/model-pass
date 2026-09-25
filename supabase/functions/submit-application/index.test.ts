@@ -321,6 +321,60 @@ registerTest("rejects an applicant who has not reached age 19", async () => {
 });
 
 registerTest(
+  "derives the 2026 makeup upper age limit from birth year",
+  async () => {
+    const opportunity = createOpportunity();
+    opportunity.rulesetId = "makeup-certification";
+    opportunity.rulesetVersion = 2;
+    opportunity.rules.push({
+      id: "makeup-exam-age-limit",
+      field: "isWithinMakeupAgeLimit",
+      operator: "equals",
+      expected: true,
+      effect: "hard_fail",
+      reason:
+        "The 2026 makeup exam requires models to be no older than 55 by birth year.",
+    });
+    const olderApplicant = createDependencies(opportunity);
+
+    const error = await expectSubmissionError(
+      () =>
+        submitApplication(
+          createInput({
+            applicant: {
+              displayName: "Applicant",
+              phone: "010-1234-5678",
+              birthDate: "1970-12-31",
+            },
+            answers: { isAvailable: true, isWithinMakeupAgeLimit: true },
+          }),
+          olderApplicant.dependencies,
+        ),
+      "The application does not satisfy this opportunity's rules.",
+    );
+    assertEquals(error.status, 422);
+    assertEquals(olderApplicant.persisted.length, 0);
+
+    const eligibleApplicant = createDependencies(opportunity);
+    await submitApplication(
+      createInput({
+        applicant: {
+          displayName: "Applicant",
+          phone: "010-1234-5678",
+          birthDate: "1971-01-01",
+        },
+        answers: { isAvailable: true },
+      }),
+      eligibleApplicant.dependencies,
+    );
+    assertEquals(
+      eligibleApplicant.persisted[0]?.answers.isWithinMakeupAgeLimit,
+      true,
+    );
+  },
+);
+
+registerTest(
   "ignores a client eligibility claim when a server-evaluated hard rule fails",
   async () => {
     // Production break: persisting a client-supplied eligible flag without evaluating the stored rules.
@@ -367,6 +421,76 @@ registerTest(
     assertEquals(persisted.length, 0);
   },
 );
+
+registerTest("rejects an omitted non-photo review answer", async () => {
+  // Production break: an omitted preferred answer can be persisted without a recruiter-visible answer row.
+  const opportunity = createOpportunity();
+  opportunity.rules.push({
+    id: "prefers-no-dye",
+    field: "noRecentDye",
+    operator: "equals",
+    expected: true,
+    effect: "needs_review",
+    reason: "Recent dye needs recruiter review.",
+  });
+  const { dependencies, persisted } = createDependencies(opportunity);
+
+  const error = await expectSubmissionError(
+    () => submitApplication(createInput(), dependencies),
+    "Answers are missing a requested opportunity field.",
+  );
+
+  assertEquals(error.status, 400);
+  assertEquals(persisted.length, 0);
+});
+
+registerTest("rejects an omitted non-photo reminder answer", async () => {
+  // Production break: an omitted reminder answer can be persisted without a recruiter-visible answer row.
+  const opportunity = createOpportunity();
+  opportunity.rules.push({
+    id: "day-of-makeup",
+    field: "wearsDayOfMakeup",
+    operator: "equals",
+    expected: false,
+    effect: "reminder",
+    reason: "Arrive without makeup.",
+  });
+  const { dependencies, persisted } = createDependencies(opportunity);
+
+  const error = await expectSubmissionError(
+    () => submitApplication(createInput(), dependencies),
+    "Answers are missing a requested opportunity field.",
+  );
+
+  assertEquals(error.status, 400);
+  assertEquals(persisted.length, 0);
+});
+
+registerTest("rejects a null answer to a stored question", async () => {
+  // Production break: a null review answer is present in the payload but still leaves the question unanswered.
+  const opportunity = createOpportunity();
+  opportunity.rules.push({
+    id: "prefers-no-dye",
+    field: "noRecentDye",
+    operator: "equals",
+    expected: true,
+    effect: "needs_review",
+    reason: "Recent dye needs recruiter review.",
+  });
+  const { dependencies, persisted } = createDependencies(opportunity);
+
+  const error = await expectSubmissionError(
+    () =>
+      submitApplication(
+        createInput({ answers: { isAvailable: true, noRecentDye: null } }),
+        dependencies,
+      ),
+    "Answers are missing a requested opportunity field.",
+  );
+
+  assertEquals(error.status, 400);
+  assertEquals(persisted.length, 0);
+});
 
 registerTest("rejects a client-supplied isAdult answer", async () => {
   // Production break: allowing the client to supply the server-derived adult eligibility input.
@@ -536,6 +660,75 @@ registerTest("persists immutable rules and evaluation snapshots", async () => {
     reminders: [],
   });
 });
+
+registerTest(
+  "keeps an unmet preferred condition eligible for recruiter review",
+  async () => {
+    const opportunity = createOpportunity();
+    opportunity.rulesetVersion = 2;
+    opportunity.rules.push({
+      id: "prefers-no-dye",
+      field: "noRecentDye",
+      operator: "equals",
+      expected: true,
+      effect: "needs_review",
+      reason: "최근 염색하지 않은 모델을 선호합니다.",
+      question: {
+        en: "Have you avoided dyeing your hair in the past month?",
+        ko: "최근 한 달 동안 염색하지 않았나요?",
+      },
+    });
+    const { dependencies, persisted } = createDependencies(opportunity);
+
+    const result = await submitApplication(
+      createInput({ answers: { isAvailable: true, noRecentDye: false } }),
+      dependencies,
+    );
+
+    assertEquals(result.submissionState, "submitted");
+    assertEquals(result.evaluation.eligible, true);
+    assertEquals(result.evaluation.reviews[0]?.ruleId, "prefers-no-dye");
+    assertEquals(persisted[0]?.rulesSnapshot[2]?.question, {
+      en: "Have you avoided dyeing your hair in the past month?",
+      ko: "최근 한 달 동안 염색하지 않았나요?",
+    });
+  },
+);
+
+registerTest(
+  "rejects an unmet required condition without persistence",
+  async () => {
+    const opportunity = createOpportunity();
+    opportunity.rulesetVersion = 2;
+    opportunity.rules.push({
+      id: "requires-length",
+      field: "shoulderLength",
+      operator: "equals",
+      expected: true,
+      effect: "hard_fail",
+      reason: "어깨 아래 길이의 모델을 찾습니다.",
+      question: {
+        en: "Is your hair at least shoulder length?",
+        ko: "현재 머리카락이 어깨 아래까지 내려오나요?",
+      },
+    });
+    const { dependencies, persisted } = createDependencies(opportunity);
+
+    const error = await expectSubmissionError(
+      () =>
+        submitApplication(
+          createInput({
+            answers: { isAvailable: true, shoulderLength: false },
+          }),
+          dependencies,
+        ),
+      "The application does not satisfy this opportunity's rules.",
+    );
+
+    assertEquals(error.status, 422);
+    assertEquals(persisted.length, 0);
+  },
+);
 
 registerTest(
   "reuses the attempt ID and canonical fingerprint across an exact retry",

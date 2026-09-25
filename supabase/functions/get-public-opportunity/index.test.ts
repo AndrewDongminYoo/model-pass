@@ -95,6 +95,24 @@ registerTest(
   },
 );
 
+registerTest("preserves the exact published applicant question", async () => {
+  const question = {
+    en: "Is your hair at least shoulder length?",
+    ko: "현재 머리카락이 어깨 아래까지 내려오나요?",
+  };
+  const result = await getPublicOpportunity(
+    { opportunityId },
+    createDependencies(
+      createRow({
+        ruleset_version: 2,
+        rules_snapshot: [{ ...rules[0], question }],
+      }),
+    ),
+  );
+
+  assertEquals(result.rules[0]?.question, question);
+});
+
 registerTest(
   "rejects malformed opportunity IDs before loading data",
   async () => {

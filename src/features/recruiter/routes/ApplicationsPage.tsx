@@ -194,6 +194,7 @@ export function ApplicationsPage() {
           key={application.id}
           application={application}
           selectionAllowed={selectionAllowed}
+          rules={currentResult?.opportunityState?.rules}
         />
       ))}
     </main>

@@ -3,6 +3,7 @@ import {
   parseRuleDefinitions,
   type RuleDefinition,
 } from "../../eligibility/domain/types";
+import type { EditableCondition } from "../../eligibility/domain/opportunity-conditions";
 
 export type OpportunityCategory = "hair_promotion" | "makeup_certification";
 
@@ -21,6 +22,8 @@ export interface OpportunityDraft {
   rulesetId: string;
   rulesetVersion: number;
   rules: RuleDefinition[];
+  conditions?: EditableCondition[];
+  requiredModelSex?: "female" | "male";
 }
 
 function isFutureDate(value: string) {
@@ -68,6 +71,18 @@ export const opportunityDraftSchema = z
     rulesetId: z.string().min(1),
     rulesetVersion: z.number().int().positive(),
     rules: rulesSchema,
+    conditions: z
+      .array(
+        z.object({
+          id: z.string(),
+          field: z.string(),
+          question: z.object({ en: z.string(), ko: z.string() }),
+          expected: z.boolean(),
+          effect: z.enum(["hard_fail", "needs_review"]),
+        }),
+      )
+      .optional(),
+    requiredModelSex: z.enum(["female", "male"]).optional(),
   })
   .superRefine(({ closesAt, startsAt }, context) => {
     if (Date.parse(closesAt) >= Date.parse(startsAt)) {

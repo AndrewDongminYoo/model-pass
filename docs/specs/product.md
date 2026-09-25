@@ -179,9 +179,10 @@ Primary references checked on 2026-09-22:
 An external application link must not be assumed to comply with Danggeun policy until a current written response or directly applicable policy text confirms the intended flow.
 The product must still function when the recruiter copies applicant answers manually.
 
-Apps in Toss is the preferred distribution target, primarily for applicant discovery and repeat participation.
-The standalone web routes remain a development and direct-link surface while the miniapp has not been registered.
-Its current official documentation supports WebView applications and states that the service is for users aged 19 or older, but this product's recruitment and opportunity-information use case requires service pre-review before integration work begins.
+Apps in Toss is the preferred applicant distribution target, but the first miniapp release is link-driven rather than a public discovery surface.
+The first miniapp implementation is link-driven and applicant-only, as specified in `docs/specs/2026-09-25-ait-applicant-entry.md`.
+Recruiter email/password authentication remains in the standalone web surface, not the miniapp.
+Miniapp implementation and test uploads may proceed, but this product's recruitment and opportunity-information use case still requires service pre-review and legal classification review before public launch.
 
 Apps in Toss references checked on 2026-09-22:
 
@@ -216,6 +217,6 @@ If price is the repeated rejection reason at KRW 29,000, test KRW 19,000 as the 
 - Medical or cosmetic diagnosis.
 - AI analysis of physical attractiveness or protected traits.
 - Native iOS or Android applications.
-- Apps in Toss integration before platform service pre-review and legal classification review.
+- Public Apps in Toss launch before platform service pre-review and legal classification review.
 - Subscriptions before repeat usage is observed.
 - DeepL before multilingual demand is observed.

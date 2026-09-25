@@ -422,6 +422,76 @@ registerTest(
   },
 );
 
+registerTest("rejects an omitted non-photo review answer", async () => {
+  // Production break: an omitted preferred answer can be persisted without a recruiter-visible answer row.
+  const opportunity = createOpportunity();
+  opportunity.rules.push({
+    id: "prefers-no-dye",
+    field: "noRecentDye",
+    operator: "equals",
+    expected: true,
+    effect: "needs_review",
+    reason: "Recent dye needs recruiter review.",
+  });
+  const { dependencies, persisted } = createDependencies(opportunity);
+
+  const error = await expectSubmissionError(
+    () => submitApplication(createInput(), dependencies),
+    "Answers are missing a requested opportunity field.",
+  );
+
+  assertEquals(error.status, 400);
+  assertEquals(persisted.length, 0);
+});
+
+registerTest("rejects an omitted non-photo reminder answer", async () => {
+  // Production break: an omitted reminder answer can be persisted without a recruiter-visible answer row.
+  const opportunity = createOpportunity();
+  opportunity.rules.push({
+    id: "day-of-makeup",
+    field: "wearsDayOfMakeup",
+    operator: "equals",
+    expected: false,
+    effect: "reminder",
+    reason: "Arrive without makeup.",
+  });
+  const { dependencies, persisted } = createDependencies(opportunity);
+
+  const error = await expectSubmissionError(
+    () => submitApplication(createInput(), dependencies),
+    "Answers are missing a requested opportunity field.",
+  );
+
+  assertEquals(error.status, 400);
+  assertEquals(persisted.length, 0);
+});
+
+registerTest("rejects a null answer to a stored question", async () => {
+  // Production break: a null review answer is present in the payload but still leaves the question unanswered.
+  const opportunity = createOpportunity();
+  opportunity.rules.push({
+    id: "prefers-no-dye",
+    field: "noRecentDye",
+    operator: "equals",
+    expected: true,
+    effect: "needs_review",
+    reason: "Recent dye needs recruiter review.",
+  });
+  const { dependencies, persisted } = createDependencies(opportunity);
+
+  const error = await expectSubmissionError(
+    () =>
+      submitApplication(
+        createInput({ answers: { isAvailable: true, noRecentDye: null } }),
+        dependencies,
+      ),
+    "Answers are missing a requested opportunity field.",
+  );
+
+  assertEquals(error.status, 400);
+  assertEquals(persisted.length, 0);
+});
+
 registerTest("rejects a client-supplied isAdult answer", async () => {
   // Production break: allowing the client to supply the server-derived adult eligibility input.
   const { dependencies, persisted } = createDependencies();

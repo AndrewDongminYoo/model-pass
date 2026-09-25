@@ -178,6 +178,9 @@ export async function submitApplication(
     throw new SubmissionError("This opportunity is closed.", 409);
   }
 
+  const derivesMakeupExamAge =
+    opportunity.rulesetId === makeupCertificationV2Metadata.id &&
+    opportunity.rulesetVersion === makeupCertificationV2Metadata.version;
   const acceptedAnswerFields = new Set(
     opportunity.rules
       .filter(
@@ -197,12 +200,24 @@ export async function submitApplication(
       400,
     );
   }
+  if (
+    [...acceptedAnswerFields].some(
+      (field) =>
+        !(derivesMakeupExamAge && field === "isWithinMakeupAgeLimit") &&
+        (parsedInput.answers[field] === undefined ||
+          parsedInput.answers[field] === null),
+    )
+  ) {
+    throw new SubmissionError(
+      "Answers are missing a requested opportunity field.",
+      400,
+    );
+  }
 
   const evaluatedAnswers = {
     ...parsedInput.answers,
     isAdult: true,
-    ...(opportunity.rulesetId === makeupCertificationV2Metadata.id &&
-    opportunity.rulesetVersion === makeupCertificationV2Metadata.version
+    ...(derivesMakeupExamAge
       ? {
           isWithinMakeupAgeLimit:
             isWithinMakeupExamAgeLimit(parsedInput.applicant.birthDate) ===

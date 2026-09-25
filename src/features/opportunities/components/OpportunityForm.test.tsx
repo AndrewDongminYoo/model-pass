@@ -602,6 +602,11 @@ it("renders applicant and recruiter-review links after publication", async () =>
   };
 
   render(<OpportunityPreview draft={draft} onPublish={onPublish} />);
+  expect(
+    screen.getByText(
+      "공고를 게시해도 앱 첫 화면에는 표시되지 않습니다. 지원자가 공고를 보려면 링크를 공유해 주세요.",
+    ),
+  ).toBeVisible();
   await user.click(
     screen.getByLabelText("필수 조건 확인: 만 19세 이상만 지원할 수 있습니다."),
   );
@@ -619,5 +624,9 @@ it("renders applicant and recruiter-review links after publication", async () =>
     "href",
     "/recruiter/opportunities/00000000-0000-0000-0000-000000000001/applications",
   );
+  const expectedUrl = `${window.location.origin}/opportunities/00000000-0000-0000-0000-000000000001/apply`;
+  expect(screen.getByLabelText("공유할 지원 링크")).toHaveValue(expectedUrl);
+  await user.click(screen.getByRole("button", { name: "지원 링크 복사" }));
+  expect(await navigator.clipboard.readText()).toBe(expectedUrl);
   expect(onPublish).toHaveBeenCalledWith(draft, ["adult-only"]);
 });

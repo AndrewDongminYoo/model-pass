@@ -81,6 +81,10 @@ export function OpportunityPreview({
   const [confirmedDraft, setConfirmedDraft] = useState<OpportunityDraft>();
   const [copiedDraft, setCopiedDraft] = useState<OpportunityDraft>();
   const [copyErrorDraft, setCopyErrorDraft] = useState<OpportunityDraft>();
+  const [copiedApplicantLinkDraft, setCopiedApplicantLinkDraft] =
+    useState<OpportunityDraft>();
+  const [copyApplicantLinkErrorDraft, setCopyApplicantLinkErrorDraft] =
+    useState<OpportunityDraft>();
   const [hardRuleConfirmation, setHardRuleConfirmation] = useState<{
     draft: OpportunityDraft;
     ruleIds: string[];
@@ -115,6 +119,21 @@ export function OpportunityPreview({
       setCopyErrorDraft(undefined);
     } catch {
       setCopyErrorDraft(draft);
+    }
+  }
+
+  async function copyApplicantLink() {
+    if (publication?.draft !== draft) return;
+    try {
+      const clipboard = navigator.clipboard;
+      if (!clipboard) throw new Error("Clipboard access is unavailable.");
+      await clipboard.writeText(
+        new URL(publication.result.applicantPath, window.location.origin).href,
+      );
+      setCopiedApplicantLinkDraft(draft);
+      setCopyApplicantLinkErrorDraft(undefined);
+    } catch {
+      setCopyApplicantLinkErrorDraft(draft);
     }
   }
 
@@ -258,6 +277,12 @@ export function OpportunityPreview({
                 (locale === "ko" ? koreanRuleReason(rule.reason) : rule.reason)}
             </label>
           ))}
+          <p>
+            {t(
+              "Publishing does not display the opportunity on the app home screen. Share the link so applicants can view it.",
+              "공고를 게시해도 앱 첫 화면에는 표시되지 않습니다. 지원자가 공고를 보려면 링크를 공유해 주세요.",
+            )}
+          </p>
           <button
             type="button"
             disabled={!allHardRulesConfirmed || publishingDraft === draft}
@@ -286,6 +311,38 @@ export function OpportunityPreview({
               >
                 {t("Applicant link", "모델 지원 링크")}
               </a>
+              <div className="field shared-link-field">
+                <label htmlFor="published-applicant-link">
+                  {t("Shareable applicant link", "공유할 지원 링크")}
+                </label>
+                <input
+                  id="published-applicant-link"
+                  type="url"
+                  readOnly
+                  value={
+                    new URL(
+                      publication.result.applicantPath,
+                      window.location.origin,
+                    ).href
+                  }
+                />
+              </div>
+              <button type="button" onClick={() => void copyApplicantLink()}>
+                {t("Copy applicant link", "지원 링크 복사")}
+              </button>
+              {copiedApplicantLinkDraft === draft && (
+                <p role="status">
+                  {t("Applicant link copied.", "지원 링크를 복사했습니다.")}
+                </p>
+              )}
+              {copyApplicantLinkErrorDraft === draft && (
+                <p role="alert">
+                  {t(
+                    "Could not copy the applicant link. Select and copy it above.",
+                    "지원 링크를 복사하지 못했습니다. 위 링크를 선택해 복사해 주세요.",
+                  )}
+                </p>
+              )}
               <a
                 className="action-link"
                 href={publication.result.recruiterReviewPath}

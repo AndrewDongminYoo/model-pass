@@ -7,17 +7,14 @@ export function getSupabaseClient(): SupabaseClient {
     return client;
   }
 
-  const environment = (
-    import.meta as ImportMeta & {
-      readonly env: Record<string, string | undefined>;
-    }
-  ).env;
-  const url = environment.VITE_SUPABASE_URL;
-  const anonKey = environment.VITE_SUPABASE_ANON_KEY;
-  if (url === undefined || anonKey === undefined) {
+  const url = import.meta.env.VITE_SUPABASE_URL;
+  const key =
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+    import.meta.env.VITE_SUPABASE_ANON_KEY;
+  if (url === undefined || key === undefined) {
     throw new Error("Supabase client environment is not configured.");
   }
 
-  client = createClient(url, anonKey);
+  client = createClient(url, key);
   return client;
 }

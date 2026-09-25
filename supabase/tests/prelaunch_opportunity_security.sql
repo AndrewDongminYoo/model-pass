@@ -218,7 +218,12 @@ insert into public.anonymous_request_quota (
   date_trunc('hour', now()) - interval '23 hours', 1
 );
 
-select is(public.delete_expired_anonymous_request_quota(now()), 1,
+select set_config('model_pass_test.expired_quota_count',
+  (select count(*)::text from public.anonymous_request_quota
+    where bucket_start <= date_trunc('hour', now()) - interval '24 hours'), true);
+
+select is(public.delete_expired_anonymous_request_quota(now()),
+  current_setting('model_pass_test.expired_quota_count')::integer,
   'scheduled cleanup deletes a quota bucket at its 24-hour boundary');
 
 select is((select count(*)::integer from public.anonymous_request_quota

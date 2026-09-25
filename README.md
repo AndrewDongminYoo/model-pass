@@ -62,15 +62,27 @@ pnpm test
 for test_file in supabase/functions/*/index.test.ts; do function_dir="${test_file%/index.test.ts}"; deno test -A --sloppy-imports --frozen-lockfile --config "$function_dir/deno.json" --lock "$function_dir/deno.lock" "$test_file"; done
 supabase test db
 pnpm build
+pnpm build:web
 pnpm test:e2e
 trunk check --all
 ```
 
 Run `supabase db reset` before `pnpm test:e2e` only on a disposable local database; the command destroys existing local data.
 The Playwright harness derives ephemeral local Supabase values at runtime and does not require committed credentials.
-`pnpm build` also packages a local `model-pass.ait` test bundle; its `appName` is provisional and must match the console app before upload.
-This bundle does not implement Toss Login or clear the service pre-review and launch gates below.
+`pnpm build` packages the applicant-only Apps in Toss bundle as `model-pass.ait`.
+`pnpm build:web` builds the standalone web surface with Supabase-authenticated recruiter routes.
+The miniapp accepts a shared opportunity link without offering recruiter email login; neither build clears the service pre-review and launch gates below.
+The standalone web build retains recruiter login and opportunity creation.
+Neither surface exposes an anonymous opportunity list. Applicants need a recruiter-shared job-scoped link until service pre-review and legal classification are complete.
 Pull requests run the format, lint, type, unit, Edge Function, pgTAP, build, and Chromium end-to-end checks in [PR checks](.github/workflows/pr-checks.yml) against a fresh local Supabase stack.
+
+## Protected Web Deployment
+
+The standalone web build is hosted at [model-pass.vercel.app](https://model-pass.vercel.app) in the `donminzzi-projects/model-pass` Vercel project.
+Vercel Authentication protects all deployments, including the production domain, while the legal and service-review launch gates below remain open.
+The Vercel build runs `pnpm build:web` and serves `dist/`; `vercel.json` rewrites direct application routes to the SPA entry point.
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` for both Preview and Production in Vercel. Do not deploy an anonymous opportunity-list Edge Function while the launch gates remain open.
+Do not put a Supabase service-role or secret key in a `VITE_` variable.
 
 ## Delivery Gates
 
@@ -78,10 +90,10 @@ Pull requests run the format, lint, type, unit, Edge Function, pgTAP, build, and
 2. Build and test the standalone web pilot.
 3. Run paid Gangnam pilot listings with hair and makeup recruiters.
 4. Decide whether repeat usage justifies product expansion.
-5. Request Apps in Toss service pre-review and create a separate integration plan.
+5. Complete Apps in Toss service pre-review before requesting a public miniapp release.
 
 Payment activation and public launch remain blocked until the product specification's legal classification and pre-launch review gates are satisfied.
 Danggeun external application-link use remains blocked until a current written response or directly applicable policy text confirms the intended flow.
-Apps in Toss integration remains blocked until the standalone pilot produces evidence and the use case passes platform pre-review.
+Apps in Toss test integration may proceed, but public release remains blocked until the use case passes platform pre-review and the product specification's legal gate.
 
 See the [product specification](docs/specs/product.md) for the controlling requirements and primary-source links.

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { ApplyPage } from "../features/applications/routes/ApplyPage";
 import { RecruiterAuthGate } from "../features/auth/components/RecruiterAuthGate";
 import { NewOpportunityPage } from "../features/opportunities/routes/NewOpportunityPage";
@@ -13,6 +13,8 @@ function RecruiterOnly({ children }: { children: ReactNode }) {
 }
 
 export function App() {
+  const isAit = import.meta.env.VITE_APP_SURFACE === "ait";
+
   return (
     <I18nProvider>
       <BrowserRouter>
@@ -28,17 +30,25 @@ export function App() {
           <Route
             path="/recruiter/opportunities/:opportunityId/applications"
             element={
-              <RecruiterOnly>
-                <ApplicationsPage />
-              </RecruiterOnly>
+              isAit ? (
+                <Navigate to="/" replace />
+              ) : (
+                <RecruiterOnly>
+                  <ApplicationsPage />
+                </RecruiterOnly>
+              )
             }
           />
           <Route
             path="/opportunities/new"
             element={
-              <RecruiterOnly>
-                <NewOpportunityPage />
-              </RecruiterOnly>
+              isAit ? (
+                <Navigate to="/" replace />
+              ) : (
+                <RecruiterOnly>
+                  <NewOpportunityPage />
+                </RecruiterOnly>
+              )
             }
           />
           <Route path="*" element={<HomePage />} />

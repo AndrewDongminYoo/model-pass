@@ -6,7 +6,7 @@ Working title: Model Pass.
 Product direction approved in conversation on 2026-09-22.
 This document describes the web application and a proposed Apps in Toss distribution path.
 The interface defaults to Korean and supports switching all application screens to English, with the choice retained across visits.
-On 2026-09-23, the operator prioritized Apps in Toss preparation; the existing service pre-review and legal gates still apply before platform integration or launch.
+On 2026-09-23, the operator prioritized Apps in Toss preparation; service pre-review and legal classification remain gates for public launch, not local implementation or test uploads.
 
 ## Product Thesis
 
@@ -73,7 +73,7 @@ The operator does not rank candidates or negotiate on behalf of either party in 
 
 ### Applicant Flow
 
-1. Open a job-scoped link without installing an app.
+1. Open a recruiter-shared, job-scoped link in the Apps in Toss miniapp or standalone web app.
 2. Read the exact procedure or exam task, schedule, venue area, duration, benefit, and cash compensation when applicable.
 3. Answer deterministic eligibility questions.
 4. Receive an immediate explanation when an explicit hard rule is not satisfied.
@@ -128,6 +128,7 @@ Structured templates and deterministic rules must prove useful before an AI depe
 ## Privacy and Safety
 
 - No public model profiles or public applicant search.
+- Anonymous opportunity listing and first-visit discovery remain disabled until service pre-review and legal classification are complete. If discovery is later approved, public cards must show only published, unclosed opportunities before their application deadline, including category, title, appointment time, venue district, duration, and stated benefit; applicant data and recruiter-only fields remain private.
 - No appearance score, public star rating, or attractiveness ranking.
 - Photos are requested only after non-photo eligibility checks pass.
 - Photos use private storage and job-scoped signed access.
@@ -179,9 +180,9 @@ Primary references checked on 2026-09-22:
 An external application link must not be assumed to comply with Danggeun policy until a current written response or directly applicable policy text confirms the intended flow.
 The product must still function when the recruiter copies applicant answers manually.
 
-Apps in Toss is the preferred distribution target, primarily for applicant discovery and repeat participation.
-The standalone web routes remain a development and direct-link surface while the miniapp has not been registered.
-Its current official documentation supports WebView applications and states that the service is for users aged 19 or older, but this product's recruitment and opportunity-information use case requires service pre-review before integration work begins.
+Apps in Toss is the preferred applicant distribution target. The applicant-only miniapp uses direct-link entry; first-visit opportunity discovery is deferred, as specified in `docs/specs/2026-09-25-ait-applicant-entry.md`.
+Recruiter email/password authentication remains in the standalone web surface, not the miniapp.
+Miniapp implementation and test uploads may proceed, but this product's recruitment and opportunity-information use case still requires service pre-review and legal classification review before public launch.
 
 Apps in Toss references checked on 2026-09-22:
 
@@ -216,6 +217,6 @@ If price is the repeated rejection reason at KRW 29,000, test KRW 19,000 as the 
 - Medical or cosmetic diagnosis.
 - AI analysis of physical attractiveness or protected traits.
 - Native iOS or Android applications.
-- Apps in Toss integration before platform service pre-review and legal classification review.
+- Public Apps in Toss launch before platform service pre-review and legal classification review.
 - Subscriptions before repeat usage is observed.
 - DeepL before multilingual demand is observed.

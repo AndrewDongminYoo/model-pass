@@ -664,6 +664,11 @@ button:disabled {
   align-items: center;
 }
 
+.shared-link-field {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
 @media (max-width: 44rem) {
   .app-shell {
     width: min(100% - 1.25rem, 70rem);

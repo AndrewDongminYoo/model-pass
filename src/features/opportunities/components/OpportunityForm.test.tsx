@@ -619,5 +619,9 @@ it("renders applicant and recruiter-review links after publication", async () =>
     "href",
     "/recruiter/opportunities/00000000-0000-0000-0000-000000000001/applications",
   );
+  const expectedUrl = `${window.location.origin}/opportunities/00000000-0000-0000-0000-000000000001/apply`;
+  expect(screen.getByLabelText("공유할 지원 링크")).toHaveValue(expectedUrl);
+  await user.click(screen.getByRole("button", { name: "지원 링크 복사" }));
+  expect(await navigator.clipboard.readText()).toBe(expectedUrl);
   expect(onPublish).toHaveBeenCalledWith(draft, ["adult-only"]);
 });

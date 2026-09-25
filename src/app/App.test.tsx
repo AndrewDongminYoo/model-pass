@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { App } from "./App";
 
 const { authMock } = vi.hoisted(() => ({
@@ -29,6 +29,8 @@ beforeEach(() => {
     data: { subscription: { unsubscribe: vi.fn() } },
   });
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 it("renders the working product name", () => {
   render(<App />);
@@ -64,6 +66,20 @@ it("denies anonymous recruiters access to opportunity publication", async () => 
   expect(
     screen.queryByRole("heading", { name: "모집 공고 만들기" }),
   ).not.toBeInTheDocument();
+});
+
+it.each([
+  "/opportunities/new",
+  "/recruiter/opportunities/00000000-0000-4000-8000-000000000123/applications",
+])("does not expose recruiter sign-in in the miniapp at %s", async (path) => {
+  vi.stubEnv("VITE_APP_SURFACE", "ait");
+  window.history.replaceState({}, "", path);
+
+  render(<App />);
+
+  expect(screen.getByRole("heading", { name: "모델패스" })).toBeVisible();
+  expect(screen.queryByLabelText("이메일")).not.toBeInTheDocument();
+  expect(authMock.getSession).not.toHaveBeenCalled();
 });
 
 it("switches recruiter sign-in copy without discarding typed credentials", async () => {

@@ -32,9 +32,6 @@ verify_jwt = false
 [functions.get-public-opportunity]
 verify_jwt = false
 
-[functions.list-public-opportunities]
-verify_jwt = false
-
 [functions.create-photo-upload]
 verify_jwt = false
 static_files = ["./functions/create-photo-upload/magick.wasm"]

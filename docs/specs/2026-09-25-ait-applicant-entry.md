@@ -2,17 +2,14 @@
 
 ## Decision
 
-The Apps in Toss build is an applicant-only surface with a public list of open opportunities and direct-link entry.
+The Apps in Toss build is an applicant-only surface with direct-link entry.
 The standalone web build retains recruiter email/password authentication and opportunity management.
 The miniapp does not offer Supabase or any other non-Toss sign-in.
 This is an implementation and test scope decision, not authorization to request review or launch.
 
 ## Applicant Flow
 
-The miniapp home first displays up to twelve published, unclosed opportunities whose application deadline has not passed, ordered by appointment time.
-Each card shows only public opportunity details and opens the existing application route without requiring a shared link or login.
-The list has explicit loading, empty, error, and retry states.
-The home also accepts a shared Model Pass opportunity URL, a matching `intoss://model-pass/opportunities/{id}/apply` URL, or the opportunity UUID.
+The miniapp home accepts a shared Model Pass opportunity URL from `https://model-pass.vercel.app`, a matching `intoss://model-pass/opportunities/{id}/apply` URL, or the opportunity UUID.
 It validates and extracts the opportunity ID locally, navigates to the existing application route, and leaves opportunity availability and eligibility to the existing server functions.
 An invalid link produces an inline error without an external navigation or personal-data request.
 Direct deep links to the same route remain available.
@@ -29,14 +26,14 @@ The miniapp build does not render or call recruiter login, publication, or appli
 
 ## Release Boundary
 
-The public list lets a first-time visitor discover an open opportunity without a recruiter-shared link.
-Publication now makes an opportunity discoverable beyond the original link recipients, so the recruiter preview discloses this before the publish action.
-Before review or launch, the operator must provide at least one real, available opportunity and confirm the legal and platform gates in the product specification.
+Anonymous public listing is disabled. First-visit opportunity discovery is deferred until service pre-review and legal classification are complete.
+The recruiter preview tells recruiters to share the job-scoped link because publication alone does not expose a listing on the app home screen.
+Before review or launch, the operator must confirm the legal and platform gates in the product specification.
 
 ## Verification
 
-Unit tests cover list filtering and public-field boundaries, valid and malformed links, channel-specific routes, and copyable recruiter URLs.
-Browser tests cover opening a listed opportunity and preserve the standalone recruiter flow.
+Unit tests cover valid and malformed links, channel-specific routes, and copyable recruiter URLs.
+Browser tests cover link-only entry and preserve the standalone recruiter flow.
 The AIT and standalone web builds must each compile without a new dependency or database migration.
 
 ## Current Platform References

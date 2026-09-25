@@ -71,10 +71,9 @@ Run `supabase db reset` before `pnpm test:e2e` only on a disposable local databa
 The Playwright harness derives ephemeral local Supabase values at runtime and does not require committed credentials.
 `pnpm build` packages the applicant-only Apps in Toss bundle as `model-pass.ait`.
 `pnpm build:web` builds the standalone web surface with Supabase-authenticated recruiter routes.
-The miniapp lists open opportunities and accepts a shared opportunity link without offering recruiter email login; neither build clears the service pre-review and launch gates below.
+The miniapp accepts a shared opportunity link without offering recruiter email login; neither build clears the service pre-review and launch gates below.
 The standalone web build retains recruiter login and opportunity creation.
-Both surfaces require the deployed `list-public-opportunities` Edge Function for the home list.
-Published opportunities become discoverable to visitors without a shared link, so confirm that recruiters understand this before production use.
+Neither surface exposes an anonymous opportunity list. Applicants need a recruiter-shared job-scoped link until service pre-review and legal classification are complete.
 Pull requests run the format, lint, type, unit, Edge Function, pgTAP, build, and Chromium end-to-end checks in [PR checks](.github/workflows/pr-checks.yml) against a fresh local Supabase stack.
 
 ## Protected Web Deployment
@@ -82,7 +81,7 @@ Pull requests run the format, lint, type, unit, Edge Function, pgTAP, build, and
 The standalone web build is hosted at [model-pass.vercel.app](https://model-pass.vercel.app) in the `donminzzi-projects/model-pass` Vercel project.
 Vercel Authentication protects all deployments, including the production domain, while the legal and service-review launch gates below remain open.
 The Vercel build runs `pnpm build:web` and serves `dist/`; `vercel.json` rewrites direct application routes to the SPA entry point.
-Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` for both Preview and Production in Vercel, and deploy the `list-public-opportunities` Supabase Edge Function before expecting the home list to load.
+Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` for both Preview and Production in Vercel. Do not deploy an anonymous opportunity-list Edge Function while the launch gates remain open.
 Do not put a Supabase service-role or secret key in a `VITE_` variable.
 
 ## Delivery Gates

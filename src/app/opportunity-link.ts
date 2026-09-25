@@ -16,7 +16,7 @@ export function applicantPathFromLink(value: string): string | null {
 
   if (url.protocol === "intoss:") {
     if (url.hostname !== "model-pass") return null;
-  } else if (url.protocol !== "https:") {
+  } else if (url.origin !== "https://model-pass.vercel.app") {
     return null;
   }
 

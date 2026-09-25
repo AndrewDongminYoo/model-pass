@@ -13,12 +13,6 @@ import {
 } from "./index.ts";
 import { isSubmitApplicationResult } from "../../../src/features/applications/api/submit-application.ts";
 
-declare global {
-  interface ImportMeta {
-    readonly env: Record<string, string | undefined>;
-  }
-}
-
 type TestFunction = () => void | Promise<void>;
 type TestRegistrar = (name: string, testFunction: TestFunction) => void;
 

@@ -1,21 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { HomePage } from "./HomePage";
 
 const opportunityId = "00000000-0000-4000-8000-000000000123";
-const { listMock } = vi.hoisted(() => ({ listMock: vi.fn() }));
-
-vi.mock("../features/opportunities/api/list-public-opportunities", () => ({
-  listPublicOpportunities: listMock,
-}));
-
 afterEach(() => vi.unstubAllEnvs());
-beforeEach(() => {
-  listMock.mockReset();
-  listMock.mockResolvedValue([]);
-});
 
 function renderAitHome() {
   vi.stubEnv("VITE_APP_SURFACE", "ait");
@@ -38,7 +28,7 @@ it("opens a shared applicant URL inside the miniapp", async () => {
 
   await user.type(
     screen.getByLabelText("공고 링크"),
-    `https://pilot.example/opportunities/${opportunityId}/apply`,
+    `https://model-pass.vercel.app/opportunities/${opportunityId}/apply`,
   );
   await user.click(screen.getByRole("button", { name: "공고 확인하기" }));
 
@@ -66,6 +56,34 @@ it("rejects an unrelated link without navigating away", async () => {
   ).toBeNull();
 });
 
+it("rejects an unrelated HTTPS host with an applicant-shaped path", async () => {
+  const user = userEvent.setup();
+  renderAitHome();
+
+  await user.type(
+    screen.getByLabelText("공고 링크"),
+    `https://unrelated.example/opportunities/${opportunityId}/apply`,
+  );
+  await user.click(screen.getByRole("button", { name: "공고 확인하기" }));
+
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "모델패스 공고 링크를 확인해 주세요.",
+  );
+  expect(
+    screen.queryByRole("heading", { name: "Opened opportunity" }),
+  ).toBeNull();
+});
+
+it("keeps public discovery off before service pre-review", () => {
+  renderAitHome();
+
+  expect(
+    screen.queryByRole("region", { name: "지금 지원 가능한 공고" }),
+  ).toBeNull();
+  expect(screen.getByLabelText("공고 링크")).toBeVisible();
+  expect(screen.queryByText("공고 목록을 불러오지 못했습니다.")).toBeNull();
+});
+
 it("accepts a miniapp deep link", async () => {
   const user = userEvent.setup();
   renderAitHome();
@@ -79,58 +97,4 @@ it("accepts a miniapp deep link", async () => {
   expect(
     screen.getByRole("heading", { name: "Opened opportunity" }),
   ).toBeVisible();
-});
-
-it("opens an active opportunity from the home card without a shared link", async () => {
-  // Production break: the first-time visitor sees a card but cannot enter the applicant flow.
-  listMock.mockResolvedValue([
-    {
-      id: opportunityId,
-      category: "hair_promotion",
-      title: "Gangnam hair promotion model",
-      startsAt: "2026-09-29T03:00:00.000Z",
-      closesAt: "2026-09-28T03:00:00.000Z",
-      venueDistrict: "서울 강남구",
-      expectedMinutes: 120,
-      benefit: { type: "procedure", description: "Free haircut" },
-    },
-  ]);
-  const user = userEvent.setup();
-  renderAitHome();
-
-  expect(await screen.findByText("Gangnam hair promotion model")).toBeVisible();
-  expect(screen.getByText("서울 강남구")).toBeVisible();
-  await user.click(screen.getByRole("link", { name: "지원 조건 확인하기" }));
-
-  expect(
-    screen.getByRole("heading", { name: "Opened opportunity" }),
-  ).toBeVisible();
-});
-
-it("explains an empty list while retaining link entry", async () => {
-  // Production break: an empty result leaves the home screen looking broken.
-  renderAitHome();
-
-  expect(
-    await screen.findByText("지금 열려 있는 공고가 없습니다."),
-  ).toBeVisible();
-  expect(screen.getByLabelText("공고 링크")).toBeVisible();
-});
-
-it("lets the visitor retry a failed public list read", async () => {
-  // Production break: a transient network error strands the visitor on a dead-end message.
-  listMock.mockRejectedValueOnce(new Error("Network unavailable"));
-  listMock.mockResolvedValueOnce([]);
-  const user = userEvent.setup();
-  renderAitHome();
-
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "공고 목록을 불러오지 못했습니다.",
-  );
-  await user.click(screen.getByRole("button", { name: "다시 시도" }));
-
-  expect(
-    await screen.findByText("지금 열려 있는 공고가 없습니다."),
-  ).toBeVisible();
-  expect(listMock).toHaveBeenCalledTimes(2);
 });

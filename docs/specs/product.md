@@ -73,7 +73,7 @@ The operator does not rank candidates or negotiate on behalf of either party in 
 
 ### Applicant Flow
 
-1. Browse open opportunities in the Apps in Toss miniapp or standalone web app, or open a job-scoped link without installing an app.
+1. Open a recruiter-shared, job-scoped link in the Apps in Toss miniapp or standalone web app.
 2. Read the exact procedure or exam task, schedule, venue area, duration, benefit, and cash compensation when applicable.
 3. Answer deterministic eligibility questions.
 4. Receive an immediate explanation when an explicit hard rule is not satisfied.
@@ -128,7 +128,7 @@ Structured templates and deterministic rules must prove useful before an AI depe
 ## Privacy and Safety
 
 - No public model profiles or public applicant search.
-- The public opportunity list exposes only published, unclosed opportunities before their application deadline. It shows the category, title, appointment time, venue district, duration, and stated benefit; applicant data and recruiter-only fields remain private.
+- Anonymous opportunity listing and first-visit discovery remain disabled until service pre-review and legal classification are complete. If discovery is later approved, public cards must show only published, unclosed opportunities before their application deadline, including category, title, appointment time, venue district, duration, and stated benefit; applicant data and recruiter-only fields remain private.
 - No appearance score, public star rating, or attractiveness ranking.
 - Photos are requested only after non-photo eligibility checks pass.
 - Photos use private storage and job-scoped signed access.
@@ -180,7 +180,7 @@ Primary references checked on 2026-09-22:
 An external application link must not be assumed to comply with Danggeun policy until a current written response or directly applicable policy text confirms the intended flow.
 The product must still function when the recruiter copies applicant answers manually.
 
-Apps in Toss is the preferred applicant distribution target. The applicant-only miniapp displays open opportunities for visitors without a shared link and retains direct-link entry, as specified in `docs/specs/2026-09-25-ait-applicant-entry.md`.
+Apps in Toss is the preferred applicant distribution target. The applicant-only miniapp uses direct-link entry; first-visit opportunity discovery is deferred, as specified in `docs/specs/2026-09-25-ait-applicant-entry.md`.
 Recruiter email/password authentication remains in the standalone web surface, not the miniapp.
 Miniapp implementation and test uploads may proceed, but this product's recruitment and opportunity-information use case still requires service pre-review and legal classification review before public launch.
 

@@ -23,7 +23,7 @@ Read `docs/specs/product.md` before changing product behavior.
 - Route unauthenticated writes containing personal data through server-side functions.
 - Enforce Supabase Row Level Security for every user-owned table.
 - Prefer boring, explicit modules over shared abstractions introduced for hypothetical future channels.
-- The standalone web pilot comes before Apps in Toss integration.
+- Apps in Toss implementation and test uploads may proceed alongside the standalone web pilot; a public miniapp release waits for the service pre-review and legal classification gates in `docs/specs/product.md`.
 - Add a dependency only when the platform or existing dependencies cannot provide the required behavior.
 
 ## Documentation

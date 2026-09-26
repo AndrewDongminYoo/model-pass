@@ -10,13 +10,13 @@ Recruiters publish their own opportunity posts, applicants choose whether to app
 
 ## Current Status
 
-The repository contains a local standalone web pilot implemented with React, Vite, TypeScript, and Supabase.
+The repository contains a standalone web pilot implemented with React, Vite, TypeScript, and Supabase, now also hosted behind Vercel Authentication (see [Protected Web Deployment](#protected-web-deployment)).
 The implemented flows cover recruiter authentication and opportunity publication, deterministic applicant eligibility, server-validated application submission, private job-scoped photos, recruiter application review, symmetric attendance actions, future-opportunity consent revocation, and retention-aware deletion requests.
 The repository also includes unit, database, Edge Function, and Playwright coverage for the local pilot.
 Task 8 defines and validates the first-party pilot event taxonomy, but it does not emit or persist those events; durable first-party collection remains a required follow-up before pilot measurement.
 
 This status is not launch readiness.
-The local pilot remains subject to the legal, policy, privacy, and operational gates in the product specification.
+The pilot remains subject to the legal, policy, privacy, and operational gates in the product specification.
 
 ## Documents
 

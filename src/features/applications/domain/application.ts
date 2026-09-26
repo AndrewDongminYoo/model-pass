@@ -22,6 +22,12 @@ export interface SubmitApplicationResult {
   evaluation: EvaluationResult;
 }
 
+export type ApplicationSubmissionState = "pending_photo" | "submitted";
+
+export interface ApplicationSubmissionResult extends SubmitApplicationResult {
+  submissionState: ApplicationSubmissionState;
+}
+
 const answerValueSchema = z.union([
   z.string().max(1_000),
   z.number(),
@@ -80,4 +86,20 @@ export function parseSubmitApplicationInput(
 
 export function isEvaluationResult(input: unknown): input is EvaluationResult {
   return evaluationResultSchema.safeParse(input).success;
+}
+
+export function isSubmitApplicationResult(
+  value: unknown,
+): value is ApplicationSubmissionResult {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const result = value as Partial<ApplicationSubmissionResult>;
+  return (
+    typeof result.applicationId === "string" &&
+    isEvaluationResult(result.evaluation) &&
+    (result.submissionState === "pending_photo" ||
+      result.submissionState === "submitted")
+  );
 }

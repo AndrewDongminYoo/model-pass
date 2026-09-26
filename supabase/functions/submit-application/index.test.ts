@@ -11,7 +11,7 @@ import {
   type OpportunityForSubmission,
   type SubmissionDependencies,
 } from "./index.ts";
-import { isSubmitApplicationResult } from "../../../src/features/applications/api/submit-application.ts";
+import { isSubmitApplicationResult } from "../../../src/features/applications/domain/application.ts";
 
 type TestFunction = () => void | Promise<void>;
 type TestRegistrar = (name: string, testFunction: TestFunction) => void;

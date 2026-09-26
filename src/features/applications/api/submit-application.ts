@@ -2,16 +2,19 @@ import { FunctionsHttpError } from "@supabase/supabase-js";
 import { getSupabaseClient } from "../../../lib/supabase/client.ts";
 import type { EvaluationResult } from "../../eligibility/domain/types.ts";
 import type {
+  ApplicationSubmissionResult,
   SubmitApplicationInput,
-  SubmitApplicationResult,
 } from "../domain/application.ts";
-import { isEvaluationResult } from "../domain/application.ts";
+import {
+  isEvaluationResult,
+  isSubmitApplicationResult,
+} from "../domain/application.ts";
 
-export type ApplicationSubmissionState = "pending_photo" | "submitted";
-
-export interface ApplicationSubmissionResult extends SubmitApplicationResult {
-  submissionState: ApplicationSubmissionState;
-}
+export type {
+  ApplicationSubmissionResult,
+  ApplicationSubmissionState,
+} from "../domain/application.ts";
+export { isSubmitApplicationResult } from "../domain/application.ts";
 
 export class ApplicationSubmissionError extends Error {
   constructor(
@@ -83,20 +86,4 @@ export async function parseApplicationSubmissionHttpError(
   } catch {
     return null;
   }
-}
-
-export function isSubmitApplicationResult(
-  value: unknown,
-): value is ApplicationSubmissionResult {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const result = value as Partial<ApplicationSubmissionResult>;
-  return (
-    typeof result.applicationId === "string" &&
-    isEvaluationResult(result.evaluation) &&
-    (result.submissionState === "pending_photo" ||
-      result.submissionState === "submitted")
-  );
 }

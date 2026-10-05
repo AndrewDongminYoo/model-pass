@@ -15,7 +15,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "UNLICENSED",
   "packageManager": "pnpm@11.24.0",
   "type": "module",
   "dependencies": {

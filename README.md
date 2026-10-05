@@ -97,3 +97,9 @@ Danggeun external application-link use remains blocked until a current written r
 Apps in Toss test integration may proceed, but public release remains blocked until the use case passes platform pre-review and the product specification's legal gate.
 
 See the [product specification](docs/specs/product.md) for the controlling requirements and primary-source links.
+
+## License
+
+Copyright (c) 2026 Dongmin Yu. All rights reserved.
+The source is public for reference only and is not open source.
+Using, copying, modifying, or redistributing it requires written permission from the copyright holder; see [`LICENSE`](LICENSE).

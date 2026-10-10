@@ -18,7 +18,7 @@ Send at most one `day_before` reminder per application when all of these hold at
 
 - The application is `submitted` and selected by the recruiter (`selected_at` is set).
 - The opportunity's `starts_at` is in the future and at most 24 hours away.
-- The application has no `applicant_confirmed`, `applicant_cancelled`, `completed`, or no-show event.
+- The application has no `applicant_confirmed` event and no final outcome recorded by either party: `applicant_cancelled`, `recruiter_cancelled`, `completed`, `applicant_no_show`, or `recruiter_no_show`.
 - The application has a stored Apps in Toss recipient key.
 - No `day_before` reminder row exists for the application.
 
@@ -28,9 +28,13 @@ An application selected less than 24 hours before the appointment is reminded on
 ## Message Content
 
 The message uses one console-approved functional template whose code starts with `model-pass-`.
-The template context carries only the appointment time in Korea Standard Time, the venue district, and the category label.
+The console limits the title to 7 characters and the body to 25 characters, counting each variable as 2 characters, so the body carries at most the appointment time in Korea Standard Time and the venue district.
 It never carries the applicant's name, phone number, birth date, receipt number, or private management code.
-The message links to the miniapp; the applicant confirms attendance with the receipt number and private management code they already hold.
+
+The console sets one landing URL per template, and variables are documented only for the body, so the landing route is fixed.
+The reminder lands on a fixed miniapp route, `/applications/lookup`, where the applicant enters the receipt number (application ID) and the private management code they already hold.
+The server resolves the opportunity from those two values and the route opens the existing attendance confirmation; a wrong pair reveals nothing beyond a generic error.
+If the console turns out to accept a per-message landing URL, this route still stays as the fallback entry for applicants who lost the original link.
 The copy must be transactional (appointment time and place, and a request to confirm or cancel) and must not promote other opportunities.
 The approved template is expected to be Korean-only; English copy is not a requirement for this channel.
 
@@ -80,6 +84,7 @@ The smoke call to `POST /api-partner/v1/apps-in-toss/users/anon-key/verify` with
 Accessed on 2026-10-10:
 
 - [푸시알림 (smart message API)](https://developers-apps-in-toss.toss.im/documentation/common/growth/smart-message)
+- [푸시알림 콘솔 설정 가이드 (title and body limits, landing URL)](https://developers-apps-in-toss.toss.im/guide/marketing/smart-message)
 - [사용자 식별키 발급 (getAnonymousKey)](https://developers-apps-in-toss.toss.im/documentation/common/authentication/hash-key)
 - [mTLS 인증서 발급 방법](https://developers-apps-in-toss.toss.im/documentation/integration/getting-started)
 - [Deno.createHttpClient](https://docs.deno.com/api/deno/~/Deno.createHttpClient)

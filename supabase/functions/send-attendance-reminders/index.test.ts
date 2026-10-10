@@ -38,11 +38,13 @@ function createDependencies(
     configured?: boolean;
     candidates?: string[];
     unclaimable?: string[];
+    elapsedMs?: () => number;
   } = {},
 ) {
   const calls: string[] = [];
   const dependencies: ReminderDependencies = {
     now: () => now,
+    elapsedMs: options.elapsedMs ?? (() => 0),
     createInvocationId: () => invocationId,
     authorize: (token) => Promise.resolve(token === "operator-token"),
     isConfigured: options.configured ?? true,
@@ -101,6 +103,24 @@ registerTest("sends each claimed reminder and records it", async () => {
     "finish:reminder-b:sent:",
   ]);
 });
+
+registerTest(
+  "stops claiming new candidates once the run budget is spent",
+  async () => {
+    // Run start, before claiming a, before claiming b.
+    const readings = [1_000, 1_000, 71_000];
+    const test = createDependencies(
+      { a: { kind: "sent" }, b: { kind: "sent" } },
+      { elapsedMs: () => readings.shift() ?? 71_000 },
+    );
+
+    const result = await sendAttendanceReminders(test.dependencies);
+
+    assertEquals(result.status, "completed");
+    assertEquals(result.sent, 1);
+    assertEquals(test.calls.includes("claim:b"), false);
+  },
+);
 
 registerTest("skips a candidate that can no longer be claimed", async () => {
   const test = createDependencies(

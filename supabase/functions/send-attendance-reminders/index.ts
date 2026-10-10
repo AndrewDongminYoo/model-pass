@@ -5,6 +5,10 @@ import { createTossMessageSender } from "./toss-message-sender.ts";
 // see docs/specs/2026-10-10-ait-attendance-reminder.md §Server Call.
 
 const MAX_BODY_BYTES = 1024;
+// Stop claiming well inside the hosted wall-clock limit and the workflow's
+// 120-second curl timeout: a run killed between claim and finish would leave
+// that reminder permanently ambiguous. Unclaimed candidates wait for the next run.
+const CLAIM_BUDGET_MS = 60_000;
 const DOCUMENTED_TOKEN_PLACEHOLDER =
   "replace-with-a-different-at-least-32-byte-random-secret";
 
@@ -22,6 +26,7 @@ export type SendOutcome =
 
 export interface ReminderDependencies {
   now: () => Date;
+  elapsedMs: () => number;
   createInvocationId: () => string;
   authorize: (token: string | null) => Promise<boolean>;
   isConfigured: boolean;
@@ -59,6 +64,7 @@ export async function sendAttendanceReminders(
   dependencies: ReminderDependencies,
 ): Promise<ReminderRunResult> {
   const now = dependencies.now();
+  const runStartedMs = dependencies.elapsedMs();
   const result: ReminderRunResult = {
     invocationId: dependencies.createInvocationId(),
     status: "completed",
@@ -79,6 +85,7 @@ export async function sendAttendanceReminders(
   const candidates = await dependencies.listCandidates(now);
   result.candidates = candidates.length;
   for (const applicationId of candidates) {
+    if (dependencies.elapsedMs() - runStartedMs > CLAIM_BUDGET_MS) break;
     const claim = await dependencies.claim(applicationId, now);
     if (claim === null) continue;
     result.claimed += 1;
@@ -239,6 +246,7 @@ export function createSupabaseDependencies(
 ): ReminderDependencies {
   return {
     now: () => new Date(),
+    elapsedMs: () => performance.now(),
     createInvocationId: () => crypto.randomUUID(),
     async authorize(token) {
       return (

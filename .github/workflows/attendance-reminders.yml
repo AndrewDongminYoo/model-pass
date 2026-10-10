@@ -1,0 +1,100 @@
+name: Attendance reminders
+
+on:
+  schedule:
+    - cron: "7 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: attendance-reminders
+  cancel-in-progress: false
+
+jobs:
+  send:
+    # Stays off until send-attendance-reminders is deployed. Deploying it with
+    # only ATTENDANCE_REMINDER_TOKEN is enough: without the certificate and
+    # template it reports notConfigured but still deletes started recipient
+    # keys, which the miniapp notice promises. Then set the repository
+    # variable MODEL_PASS_REMINDERS_ENABLED to "true".
+    if: github.event_name == 'workflow_dispatch' || vars.MODEL_PASS_REMINDERS_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Invoke attendance reminders
+        env:
+          SUPABASE_URL: ${{ secrets.MODEL_PASS_SUPABASE_URL }}
+          OPERATOR_TOKEN: ${{ secrets.MODEL_PASS_ATTENDANCE_REMINDER_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          if ! http_status="$(curl --silent --fail-with-body --max-time 120 --connect-timeout 10 --output "$response_file" --write-out '%{http_code}' --request POST --header "Authorization: Bearer ${OPERATOR_TOKEN}" --header "Content-Type: application/json" --data '{}' "${SUPABASE_URL}/functions/v1/send-attendance-reminders")"; then
+            echo "Attendance reminder request failed."
+            exit 1
+          fi
+
+          if [ "$http_status" != "200" ]; then
+            echo "Attendance reminders returned an unexpected HTTP status."
+            exit 1
+          fi
+
+          node --input-type=module - "$response_file" <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const fail = (message) => {
+            console.error(message);
+            process.exit(1);
+          };
+          const countKeys = [
+            "deletedRecipients",
+            "candidates",
+            "claimed",
+            "sent",
+            "failed",
+            "released",
+            "ambiguous",
+          ];
+          const statuses = [
+            "completed",
+            "notConfigured",
+            "stoppedOnConfigurationFailure",
+            "stoppedOnAmbiguousOutcome",
+          ];
+
+          let result;
+          try {
+            result = JSON.parse(readFileSync(process.argv[2], "utf8"));
+          } catch {
+            fail("Attendance reminders returned invalid JSON.");
+          }
+
+          if (
+            typeof result !== "object" ||
+            result === null ||
+            Array.isArray(result) ||
+            Object.keys(result).length !== countKeys.length + 2 ||
+            typeof result.invocationId !== "string" ||
+            !statuses.includes(result.status) ||
+            !countKeys.every(
+              (key) => Number.isSafeInteger(result[key]) && result[key] >= 0,
+            )
+          ) {
+            fail("Attendance reminders returned an invalid response shape.");
+          }
+
+          console.log(
+            `Attendance reminders: invocation=${result.invocationId} status=${result.status} ${countKeys.map((key) => `${key}=${result[key]}`).join(" ")}`,
+          );
+
+          // notConfigured is expected before the certificate and template exist.
+          if (result.status === "stoppedOnConfigurationFailure") {
+            fail("Partner API rejected the configuration; check the certificate and template.");
+          }
+          if (result.status === "stoppedOnAmbiguousOutcome") {
+            fail("A reminder outcome is ambiguous; check the partner API before the next run.");
+          }
+          NODE

@@ -229,6 +229,7 @@ it("keeps a submitted applicant in the waiting state until recruiter selection",
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
   localStorage.clear();
   window.history.replaceState({}, "", "/");
 });
@@ -1174,3 +1175,22 @@ function serverHardFailEvaluation() {
     reminders: [],
   };
 }
+
+it.each([
+  ["ait", true],
+  ["web", false],
+])(
+  "discloses the reminder identifier only on the %s surface: %s",
+  async (surface, shown) => {
+    // Production break: the miniapp stores a Toss identifier without telling the applicant.
+    vi.stubEnv("VITE_APP_SURFACE", surface);
+    const user = userEvent.setup();
+    render(<ApplicationForm opportunity={makeupOpportunity} />);
+    await reachApplicationForm(user);
+
+    const notice = screen.queryByText(
+      /토스가 제공하는 사용자 식별값을 이 지원에만 저장하고/,
+    );
+    expect(notice !== null).toBe(shown);
+  },
+);

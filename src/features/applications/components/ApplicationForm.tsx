@@ -585,6 +585,14 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
               setContactValue("currentApplicationConsent", checked)
             }
           />
+          {import.meta.env.VITE_APP_SURFACE === "ait" ? (
+            <p className="callout">
+              {t(
+                "When you apply in the Toss app, we store a Toss-provided user identifier for this application only, to remind you the day before your appointment, and delete it when the appointment starts.",
+                "토스 앱에서 지원하면 일정 전날 참여 확정 알림을 보내기 위해 토스가 제공하는 사용자 식별값을 이 지원에만 저장하고, 일정이 시작되면 삭제합니다.",
+              )}
+            </p>
+          ) : null}
           <CheckboxField
             id="future-opportunity-consent"
             label={t(

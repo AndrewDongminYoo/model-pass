@@ -128,6 +128,11 @@ select
     from public.application_answers answer
     where answer.application_id = application.id
   ) as answers_removed,
+  not exists (
+    select 1
+    from public.application_toss_recipients recipient
+    where recipient.application_id = application.id
+  ) as toss_recipient_key_removed,
   application.evaluation_snapshot = jsonb_build_object(
     'rulesetId', application.ruleset_id,
     'rulesetVersion', application.ruleset_version,

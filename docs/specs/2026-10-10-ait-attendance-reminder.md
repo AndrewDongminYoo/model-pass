@@ -68,7 +68,10 @@ If the review requires one, `requestNotificationAgreement` is added in a separat
 - Any other explicit failure (HTTP 400, `resultType: "FAIL"` even with HTTP 200, or a `SUCCESS` envelope in which every `sent*Count` is zero) marks the row `failed` with its failure code, and a later run may reclaim it, up to three attempts in total.
 - An ambiguous outcome (timeout, network error, HTTP 5xx, or an HTTP 2xx body that is not a recognized result) leaves the row claimed without a result and is never retried automatically, because the message may already have been delivered.
 - The first ambiguous outcome also stops the run, so a shared outage such as an mTLS or DNS failure leaves at most one application ambiguous instead of every eligible one.
-- When the certificate or template code secret is absent, the function sends nothing and reports that state explicitly.
+- When the certificate or template code secret is absent, the function sends nothing and reports `notConfigured`; it still deletes recipient keys whose appointment has started, because AIT submissions already store keys.
+- The scheduled workflow runs only when the repository variable `MODEL_PASS_REMINDERS_ENABLED` is `true`, so it does not fail hourly before the function is deployed; a configuration failure or an ambiguous outcome fails the workflow run so the operator sees it.
+- Enablement order: apply the migrations, deploy the function with only `ATTENDANCE_REMINDER_TOKEN`, then set the variable. Hourly runs then delete started recipient keys while sending stays `notConfigured`. The miniapp notice promises that deletion, so this must happen before any bundle that shows the notice reaches applicants; the certificate and template secrets are added later.
+- Each run stops claiming new candidates after 60 seconds, well inside the workflow's 120-second request timeout, so a run is not cut off between a claim and its recorded outcome.
 
 ## External Preconditions
 

@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(50);
+select plan(51);
 
 insert into auth.users (id, aud, role, email, encrypted_password)
 values (
@@ -518,6 +518,9 @@ set
   deletion_invocation_id = '00000000-0000-4000-8000-000000000942'
 where id = '00000000-0000-4000-8000-000000000941';
 
+insert into public.application_toss_recipients (application_id, anon_key)
+values ('00000000-0000-4000-8000-000000000911', 'privacy-anon-key');
+
 create temporary table fulfilled_deletion_result as
 select public.fulfill_applicant_deletion_request(
   (
@@ -553,6 +556,16 @@ select is(
   ),
   0::bigint,
   'fulfillment removes applicant answers'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.application_toss_recipients
+    where application_id = '00000000-0000-4000-8000-000000000911'
+  ),
+  0::bigint,
+  'fulfillment removes the Apps in Toss recipient key'
 );
 
 select is(

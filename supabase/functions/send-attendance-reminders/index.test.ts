@@ -39,11 +39,13 @@ function createDependencies(
     candidates?: string[];
     unclaimable?: string[];
     elapsedMs?: () => number;
+    now?: () => Date;
   } = {},
 ) {
   const calls: string[] = [];
+  const claimTimes: string[] = [];
   const dependencies: ReminderDependencies = {
-    now: () => now,
+    now: options.now ?? (() => now),
     elapsedMs: options.elapsedMs ?? (() => 0),
     createInvocationId: () => invocationId,
     authorize: (token) => Promise.resolve(token === "operator-token"),
@@ -56,8 +58,9 @@ function createDependencies(
       calls.push("list");
       return Promise.resolve(options.candidates ?? Object.keys(outcomes));
     },
-    claim: (applicationId) => {
+    claim: (applicationId, claimNow) => {
       calls.push(`claim:${applicationId}`);
+      claimTimes.push(claimNow.toISOString());
       return Promise.resolve(
         options.unclaimable?.includes(applicationId)
           ? null
@@ -81,7 +84,7 @@ function createDependencies(
     },
     reportError: () => undefined,
   };
-  return { dependencies, calls };
+  return { dependencies, calls, claimTimes };
 }
 
 registerTest("sends each claimed reminder and records it", async () => {
@@ -121,6 +124,27 @@ registerTest(
     assertEquals(test.calls.includes("claim:b"), false);
   },
 );
+
+registerTest("re-reads the time for each claim", async () => {
+  // Production break: reusing the run-start time can claim an appointment that began mid-run.
+  const times = [
+    "2026-10-10T03:00:00.000Z",
+    "2026-10-10T03:00:05.000Z",
+    "2026-10-10T03:00:10.000Z",
+    "2026-10-10T03:00:15.000Z",
+    "2026-10-10T03:00:20.000Z",
+  ];
+  const test = createDependencies(
+    { a: { kind: "sent" }, b: { kind: "sent" } },
+    { now: () => new Date(times.shift() ?? "2026-10-10T03:01:00.000Z") },
+  );
+
+  await sendAttendanceReminders(test.dependencies);
+
+  assertEquals(test.claimTimes.length, 2);
+  assertEquals(test.claimTimes[0] === "2026-10-10T03:00:00.000Z", false);
+  assertEquals(test.claimTimes[0] === test.claimTimes[1], false);
+});
 
 registerTest("skips a candidate that can no longer be claimed", async () => {
   const test = createDependencies(

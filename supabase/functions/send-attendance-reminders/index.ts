@@ -86,7 +86,8 @@ export async function sendAttendanceReminders(
   result.candidates = candidates.length;
   for (const applicationId of candidates) {
     if (dependencies.elapsedMs() - runStartedMs > CLAIM_BUDGET_MS) break;
-    const claim = await dependencies.claim(applicationId, now);
+    // Re-read the time so an appointment that began mid-run is not claimed.
+    const claim = await dependencies.claim(applicationId, dependencies.now());
     if (claim === null) continue;
     result.claimed += 1;
 
@@ -99,10 +100,20 @@ export async function sendAttendanceReminders(
     }
 
     if (outcome.kind === "sent") {
-      await dependencies.finish(claim.reminderId, "sent", null, now);
+      await dependencies.finish(
+        claim.reminderId,
+        "sent",
+        null,
+        dependencies.now(),
+      );
       result.sent += 1;
     } else if (outcome.kind === "failed") {
-      await dependencies.finish(claim.reminderId, "failed", outcome.code, now);
+      await dependencies.finish(
+        claim.reminderId,
+        "failed",
+        outcome.code,
+        dependencies.now(),
+      );
       result.failed += 1;
     } else if (outcome.kind === "configuration") {
       // A broken certificate or template must not spend this attempt.

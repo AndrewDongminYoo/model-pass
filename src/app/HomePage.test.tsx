@@ -17,6 +17,7 @@ function renderAitHome() {
           path="/opportunities/:opportunityId/apply"
           element={<h1>Opened opportunity</h1>}
         />
+        <Route path="/applications/lookup" element={<h1>Opened lookup</h1>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -97,4 +98,13 @@ it("accepts a miniapp deep link", async () => {
   expect(
     screen.getByRole("heading", { name: "Opened opportunity" }),
   ).toBeVisible();
+});
+
+it("links applicants who already applied to the lookup page", async () => {
+  const user = userEvent.setup();
+  renderAitHome();
+
+  await user.click(screen.getByRole("link", { name: "내 지원 확인하기" }));
+
+  expect(screen.getByRole("heading", { name: "Opened lookup" })).toBeVisible();
 });

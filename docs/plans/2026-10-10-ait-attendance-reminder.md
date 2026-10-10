@@ -33,3 +33,9 @@ Tasks 2 and 3 do not call the partner API and can proceed in parallel with the c
 - The template context carries no applicant personal data or private management code.
 - The lookup route reveals nothing for a wrong receipt number and code pair.
 - The web bundle does not import the Apps in Toss SDK.
+
+## Reconciliation (2026-10-10)
+
+The task text above is the approved record and is not rewritten; the shipped code is the authority where they differ.
+
+- Task 5 shipped as a standalone page on both surfaces, not an AIT-only route inside the application page. The application page cannot render for a closed opportunity (`get-public-opportunity` returns HTTP 410), and reminders arrive after the deadline, so the page calls a new `resolve-application` Edge Function and renders the attendance and privacy controls itself. The home page links to it. Tests: `supabase/functions/resolve-application/index.test.ts`, `src/features/applications/routes/ApplicationLookupPage.test.tsx`, `src/app/App.test.tsx`, `src/app/HomePage.test.tsx`.

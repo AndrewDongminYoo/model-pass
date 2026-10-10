@@ -48,6 +48,9 @@ verify_jwt = false
 [functions.get-attendance]
 verify_jwt = false
 
+[functions.resolve-application]
+verify_jwt = false
+
 [functions.select-application]
 verify_jwt = true
 

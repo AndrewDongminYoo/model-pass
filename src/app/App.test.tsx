@@ -129,3 +129,16 @@ it("allows an authenticated recruiter to reach opportunity drafting", async () =
     password: "correct horse battery staple",
   });
 });
+
+it.each(["web", "ait"])(
+  "opens the application lookup page on the %s surface",
+  (surface) => {
+    vi.stubEnv("VITE_APP_SURFACE", surface);
+    window.history.replaceState({}, "", "/applications/lookup");
+
+    render(<App />);
+
+    expect(screen.getByRole("heading", { name: "내 지원 확인" })).toBeVisible();
+    expect(screen.getByLabelText("비공개 관리 코드")).toBeVisible();
+  },
+);

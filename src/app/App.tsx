@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { ApplicationLookupPage } from "../features/applications/routes/ApplicationLookupPage";
 import { ApplyPage } from "../features/applications/routes/ApplyPage";
 import { RecruiterAuthGate } from "../features/auth/components/RecruiterAuthGate";
 import { NewOpportunityPage } from "../features/opportunities/routes/NewOpportunityPage";
@@ -26,6 +27,10 @@ export function App() {
           <Route
             path="/opportunities/:opportunityId/apply"
             element={<ApplyPage />}
+          />
+          <Route
+            path="/applications/lookup"
+            element={<ApplicationLookupPage />}
           />
           <Route
             path="/recruiter/opportunities/:opportunityId/applications"

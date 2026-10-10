@@ -25,7 +25,11 @@ as $$
       from public.attendance_reminders reminder
       where reminder.application_id = application.id
         and reminder.kind = 'day_before'
-        and not (reminder.result = 'failed' and reminder.attempt_count < 3)
+        -- An unresolved claim has a null result, so compare null-safely.
+        and (
+          reminder.result is distinct from 'failed'
+          or reminder.attempt_count >= 3
+        )
     )
   order by opportunity.starts_at, application.id
   limit 500;

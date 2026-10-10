@@ -64,7 +64,8 @@ If the review requires one, `requestNotificationAgreement` is added in a separat
 - Each send is claimed by inserting or reclaiming the reminder row before the API call (`unique (application_id, kind)`), so overlapping runs cannot send twice.
 - A configuration failure (HTTP 401 or 403, which the API documents as authentication and send-permission errors) stops the run and releases the claim without consuming the application's attempt, so a broken certificate or template does not exhaust every application's retry budget.
 - Any other explicit failure (HTTP 400, `resultType: "FAIL"` even with HTTP 200, or a `SUCCESS` envelope in which every `sent*Count` is zero) marks the row `failed` with its failure code, and a later run may reclaim it, up to three attempts in total.
-- An ambiguous outcome (timeout, network error, or HTTP 5xx) leaves the row claimed without a result and is never retried automatically, because the message may already have been delivered.
+- An ambiguous outcome (timeout, network error, HTTP 5xx, or an HTTP 2xx body that is not a recognized result) leaves the row claimed without a result and is never retried automatically, because the message may already have been delivered.
+- The first ambiguous outcome also stops the run, so a shared outage such as an mTLS or DNS failure leaves at most one application ambiguous instead of every eligible one.
 - When the certificate or template code secret is absent, the function sends nothing and reports that state explicitly.
 
 ## External Preconditions

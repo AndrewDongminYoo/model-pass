@@ -20,7 +20,10 @@ Send at most one `day_before` reminder per application when all of these hold at
 - The opportunity's `starts_at` is in the future and at most 24 hours away.
 - The application has no `applicant_confirmed` event and no final outcome recorded by either party: `applicant_cancelled`, `recruiter_cancelled`, `completed`, `applicant_no_show`, or `recruiter_no_show`.
 - The application has a stored Apps in Toss recipient key.
-- No `day_before` reminder row exists for the application.
+- No `day_before` reminder row exists for the application, or the existing row is a retryable explicit failure (see §Server Call).
+
+Claiming a reminder locks the application row and re-checks this rule in the same transaction.
+Once a reminder row exists, `unselect_application_for_recruiter` refuses to unselect the application, so an applicant is never asked to confirm an appointment the recruiter has silently withdrawn; the recruiter records `recruiter_cancelled` instead, which keeps the attendance history symmetric.
 
 The scheduler runs hourly, so the effective lead time is between 23 and 24 hours, plus scheduler delay.
 An application selected less than 24 hours before the appointment is reminded on the next run.
@@ -55,8 +58,9 @@ If the review requires one, `requestNotificationAgreement` is added in a separat
 - The partner API at `https://apps-in-toss-api.toss.im` requires the partner mTLS client certificate.
 - The sender runs as a Supabase Edge Function using `Deno.createHttpClient({ cert, key })`. The certificate and key are Edge Function secrets and never reach the client bundle.
 - The supabase/edge-runtime source exposes `Deno.createHttpClient` (`ext/runtime/js/denoOverrides.js`, checked 2026-10-10), but whether the hosted runtime honors `cert` and `key` is unverified. The first implementation task proves it with a smoke call. If it fails, the fallback is a Node `https.Agent` sender in the scheduled GitHub Actions job; only one sender is built.
-- Each send is claimed by inserting a reminder row before the API call (`unique (application_id, kind)`), so overlapping runs or retries cannot send twice.
-- A response with `resultType: "FAIL"` is a failure even with HTTP 200; the failure code is stored on the reminder row.
+- Each send is claimed by inserting or reclaiming the reminder row before the API call (`unique (application_id, kind)`), so overlapping runs cannot send twice.
+- An explicit failure (an HTTP 4xx response, or `resultType: "FAIL"` even with HTTP 200) marks the row `failed` with its failure code, and a later run may reclaim it, up to three attempts in total.
+- An ambiguous outcome (timeout, network error, or HTTP 5xx) leaves the row claimed without a result and is never retried automatically, because the message may already have been delivered.
 - When the certificate or template code secret is absent, the function sends nothing and reports that state explicitly.
 
 ## External Preconditions

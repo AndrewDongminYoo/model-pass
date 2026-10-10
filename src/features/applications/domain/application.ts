@@ -15,7 +15,11 @@ export interface SubmitApplicationInput {
   answers: Record<string, AnswerValue>;
   currentApplicationConsent: true;
   futureOpportunityConsent: boolean;
+  tossAnonKey?: string;
 }
+
+// Printable ASCII without spaces; the Apps in Toss hash format is not documented.
+export const tossAnonKeyPattern = /^[\x21-\x7e]{1,512}$/;
 
 export interface SubmitApplicationResult {
   applicationId: string;
@@ -75,6 +79,7 @@ export const submitApplicationInputSchema = z
       .refine((answers) => Object.keys(answers).length <= 50),
     currentApplicationConsent: z.literal(true),
     futureOpportunityConsent: z.boolean(),
+    tossAnonKey: z.string().regex(tossAnonKeyPattern).optional(),
   })
   .strip();
 

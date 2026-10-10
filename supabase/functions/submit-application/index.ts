@@ -85,6 +85,11 @@ export interface SubmissionDependencies {
   persistApplication: (
     command: ApplicationPersistenceCommand,
   ) => Promise<ApplicationPersistenceResult>;
+  recordTossRecipient: (
+    applicationId: string,
+    submissionAttemptId: string,
+    anonKey: string,
+  ) => Promise<void>;
 }
 
 interface OpportunityRow {
@@ -152,6 +157,12 @@ export async function submitApplication(
       );
     }
 
+    await recordTossRecipientBestEffort(
+      dependencies,
+      existingAttempt.applicationId,
+      parsedInput.submissionAttemptId,
+      parsedInput.tossAnonKey,
+    );
     return {
       applicationId: existingAttempt.applicationId,
       evaluation: existingAttempt.evaluation,
@@ -274,7 +285,34 @@ export async function submitApplication(
     submissionFingerprint,
   });
 
+  await recordTossRecipientBestEffort(
+    dependencies,
+    persistenceResult.applicationId,
+    parsedInput.submissionAttemptId,
+    parsedInput.tossAnonKey,
+  );
   return persistenceResult;
+}
+
+// The reminder key is optional, so a failed write must not fail the submission.
+async function recordTossRecipientBestEffort(
+  dependencies: SubmissionDependencies,
+  applicationId: string,
+  submissionAttemptId: string,
+  anonKey: string | undefined,
+): Promise<void> {
+  if (anonKey === undefined) {
+    return;
+  }
+  try {
+    await dependencies.recordTossRecipient(
+      applicationId,
+      submissionAttemptId,
+      anonKey,
+    );
+  } catch (error) {
+    console.error("Failed to record the Apps in Toss recipient.", error);
+  }
 }
 
 export function deriveSubmissionState(
@@ -456,6 +494,19 @@ export function createSupabaseDependencies(
       }
 
       return { ...persistedResult, submissionState };
+    },
+    async recordTossRecipient(applicationId, submissionAttemptId, anonKey) {
+      // The function skips the write for a stale attempt or a started appointment.
+      const { error } = await client.rpc("record_toss_recipient", {
+        p_application_id: applicationId,
+        p_submission_attempt_id: submissionAttemptId,
+        p_anon_key: anonKey,
+      });
+      if (error !== null) {
+        throw new Error(
+          `Failed to record the Apps in Toss recipient: ${error.message}`,
+        );
+      }
     },
   };
 }

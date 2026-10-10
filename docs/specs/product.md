@@ -32,6 +32,9 @@ The following problem evidence came from the operator's domain observations duri
 These observations are discovery inputs, not market-size statistics.
 The pilot must measure their frequency and economic value.
 
+A salon recruiter interview on 2026-10-07 (one manager-level interviewee) added two reported pain points: model no-shows, and recruiter-paid fees on an existing model-matching platform.
+The record, its sample size, and the affected decisions are in `docs/notes/2026-10-07-salon-recruiter-interview.md`.
+
 ## Initial Market
 
 - Demand-side base: hair salons, junior designers, makeup academies, and makeup examinees based in Gangnam-gu, Seoul.

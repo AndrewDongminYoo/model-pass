@@ -14,10 +14,13 @@ create table public.application_toss_recipients (
 alter table public.application_toss_recipients enable row level security;
 revoke all on table public.application_toss_recipients from public, anon, authenticated;
 
--- Records the key only while the appointment is still ahead, so a delayed
--- submission retry cannot recreate a key that cleanup already removed.
+-- Records the key only for the still-current submission attempt and while the
+-- appointment is still ahead. The row lock serializes this write with
+-- fulfill_applicant_deletion_request, which rotates the attempt ID, so a
+-- delayed retry cannot recreate a key that cleanup or deletion removed.
 create function public.record_toss_recipient(
   p_application_id uuid,
+  p_submission_attempt_id uuid,
   p_anon_key text
 )
 returns boolean
@@ -26,15 +29,28 @@ security definer
 set search_path = public, pg_catalog
 as $$
 declare
+  target_application public.applications%rowtype;
   inserted_count integer;
 begin
-  insert into public.application_toss_recipients (application_id, anon_key)
-  select application.id, p_anon_key
+  select application.* into target_application
   from public.applications application
-  join public.opportunities opportunity
-    on opportunity.id = application.opportunity_id
   where application.id = p_application_id
-    and opportunity.starts_at > now()
+  for update;
+
+  if not found
+    or target_application.submission_attempt_id is distinct from p_submission_attempt_id
+    or target_application.applicant_phone is null
+    or not exists (
+      select 1
+      from public.opportunities opportunity
+      where opportunity.id = target_application.opportunity_id
+        and opportunity.starts_at > now()
+    ) then
+    return false;
+  end if;
+
+  insert into public.application_toss_recipients (application_id, anon_key)
+  values (target_application.id, p_anon_key)
   on conflict (application_id) do nothing;
 
   get diagnostics inserted_count = row_count;
@@ -42,9 +58,9 @@ begin
 end;
 $$;
 
-revoke all on function public.record_toss_recipient(uuid, text)
+revoke all on function public.record_toss_recipient(uuid, uuid, text)
 from public, anon, authenticated;
-grant execute on function public.record_toss_recipient(uuid, text)
+grant execute on function public.record_toss_recipient(uuid, uuid, text)
 to service_role;
 
 create table public.attendance_reminders (

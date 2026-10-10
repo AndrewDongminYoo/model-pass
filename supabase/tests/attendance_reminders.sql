@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(22);
+select plan(23);
 
 select ok(
   (select relrowsecurity from pg_class where oid = 'public.application_toss_recipients'::regclass),
@@ -254,7 +254,21 @@ select is(
 
 select is(
   public.record_toss_recipient(
-    '00000000-0000-4000-8000-000000000714', 'anon-714'
+    '00000000-0000-4000-8000-000000000714', gen_random_uuid(), 'anon-714'
+  ),
+  false,
+  'a recipient key is not recorded for a stale submission attempt'
+);
+
+select is(
+  public.record_toss_recipient(
+    '00000000-0000-4000-8000-000000000714',
+    (
+      select submission_attempt_id
+      from public.applications
+      where id = '00000000-0000-4000-8000-000000000714'
+    ),
+    'anon-714'
   ),
   true,
   'a recipient key is recorded before the appointment starts'
@@ -294,7 +308,13 @@ values (
 
 select is(
   public.record_toss_recipient(
-    '00000000-0000-4000-8000-000000000716', 'anon-716'
+    '00000000-0000-4000-8000-000000000716',
+    (
+      select submission_attempt_id
+      from public.applications
+      where id = '00000000-0000-4000-8000-000000000716'
+    ),
+    'anon-716'
   ),
   false,
   'a recipient key is not recorded after the appointment starts'

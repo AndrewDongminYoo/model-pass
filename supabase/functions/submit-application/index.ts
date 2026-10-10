@@ -87,6 +87,7 @@ export interface SubmissionDependencies {
   ) => Promise<ApplicationPersistenceResult>;
   recordTossRecipient: (
     applicationId: string,
+    submissionAttemptId: string,
     anonKey: string,
   ) => Promise<void>;
 }
@@ -159,6 +160,7 @@ export async function submitApplication(
     await recordTossRecipientBestEffort(
       dependencies,
       existingAttempt.applicationId,
+      parsedInput.submissionAttemptId,
       parsedInput.tossAnonKey,
     );
     return {
@@ -286,6 +288,7 @@ export async function submitApplication(
   await recordTossRecipientBestEffort(
     dependencies,
     persistenceResult.applicationId,
+    parsedInput.submissionAttemptId,
     parsedInput.tossAnonKey,
   );
   return persistenceResult;
@@ -295,13 +298,18 @@ export async function submitApplication(
 async function recordTossRecipientBestEffort(
   dependencies: SubmissionDependencies,
   applicationId: string,
+  submissionAttemptId: string,
   anonKey: string | undefined,
 ): Promise<void> {
   if (anonKey === undefined) {
     return;
   }
   try {
-    await dependencies.recordTossRecipient(applicationId, anonKey);
+    await dependencies.recordTossRecipient(
+      applicationId,
+      submissionAttemptId,
+      anonKey,
+    );
   } catch (error) {
     console.error("Failed to record the Apps in Toss recipient.", error);
   }
@@ -487,10 +495,11 @@ export function createSupabaseDependencies(
 
       return { ...persistedResult, submissionState };
     },
-    async recordTossRecipient(applicationId, anonKey) {
-      // The function skips the write once the appointment has started.
+    async recordTossRecipient(applicationId, submissionAttemptId, anonKey) {
+      // The function skips the write for a stale attempt or a started appointment.
       const { error } = await client.rpc("record_toss_recipient", {
         p_application_id: applicationId,
+        p_submission_attempt_id: submissionAttemptId,
         p_anon_key: anonKey,
       });
       if (error !== null) {

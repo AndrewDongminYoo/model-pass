@@ -82,7 +82,11 @@ function createDependencies(
   } = {},
 ) {
   const persisted: ApplicationPersistenceCommand[] = [];
-  const recordedRecipients: { applicationId: string; anonKey: string }[] = [];
+  const recordedRecipients: {
+    applicationId: string;
+    submissionAttemptId: string;
+    anonKey: string;
+  }[] = [];
   let opportunityLoadCount = 0;
   let quotaConsumptionCount = 0;
   const quotaCalls: unknown[][] = [];
@@ -108,12 +112,17 @@ function createDependencies(
         },
       );
     },
-    recordTossRecipient: (recordedApplicationId, anonKey) => {
+    recordTossRecipient: (
+      recordedApplicationId,
+      recordedSubmissionAttemptId,
+      anonKey,
+    ) => {
       if (options.recipientWriteFails === true) {
         return Promise.reject(new Error("recipient write failed"));
       }
       recordedRecipients.push({
         applicationId: recordedApplicationId,
+        submissionAttemptId: recordedSubmissionAttemptId,
         anonKey,
       });
       return Promise.resolve();
@@ -150,7 +159,7 @@ registerTest(
 
     assertEquals(test.persisted.length, 1);
     assertEquals(test.recordedRecipients, [
-      { applicationId, anonKey: "anon-key-123" },
+      { applicationId, submissionAttemptId, anonKey: "anon-key-123" },
     ]);
   },
 );
@@ -904,7 +913,7 @@ registerTest(
     assertEquals(recovered.applicationId, applicationId);
     assertEquals(retry.persisted.length, 0);
     assertEquals(retry.recordedRecipients, [
-      { applicationId, anonKey: "anon-key-123" },
+      { applicationId, submissionAttemptId, anonKey: "anon-key-123" },
     ]);
   },
 );

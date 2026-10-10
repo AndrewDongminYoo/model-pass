@@ -24,9 +24,11 @@ Send at most one `day_before` reminder per application when all of these hold at
 
 Claiming a reminder locks the application row and re-checks this rule in the same transaction.
 Once a reminder row exists, `unselect_application_for_recruiter` refuses to unselect the application, so an applicant is never asked to confirm an appointment the recruiter has silently withdrawn; the recruiter records `recruiter_cancelled` instead, which keeps the attendance history symmetric.
+A cancellation recorded in the seconds between a committed claim and the partner API call is an accepted residual risk: no cancellation message is sent in this version, and the lookup route shows the recruiter's cancellation when the applicant opens it.
 
 The scheduler runs hourly, so the effective lead time is between 23 and 24 hours, plus scheduler delay.
-An application selected less than 24 hours before the appointment is reminded on the next run.
+An application selected less than 24 hours before the appointment is reminded on the next run if the appointment has not started by then.
+An application selected within about an hour of the appointment may therefore receive no reminder; this boundary is accepted and covered by a sender test.
 
 ## Message Content
 

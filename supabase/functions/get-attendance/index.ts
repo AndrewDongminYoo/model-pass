@@ -350,18 +350,29 @@ export function createSupabaseDependencies(
       if (opportunityError !== null) throw opportunityError;
       if (opportunity === null) return null;
       const now = new Date();
+      const canUnselectBySchedule =
+        actor.party === "recruiter" &&
+        application.selected_at !== null &&
+        application.selected_by === actor.userId &&
+        opportunity.status === "published" &&
+        opportunity.closed_at === null &&
+        new Date(opportunity.closes_at) > now &&
+        new Date(opportunity.starts_at) > now;
+      // unselect_application_for_recruiter refuses once a reminder is claimed.
+      let hasReminderClaim = false;
+      if (canUnselectBySchedule) {
+        const { count, error: reminderError } = await client
+          .from("attendance_reminders")
+          .select("id", { count: "exact", head: true })
+          .eq("application_id", application.id);
+        if (reminderError !== null) throw reminderError;
+        hasReminderClaim = (count ?? 0) > 0;
+      }
       return {
         actor,
         startsAt: opportunity.starts_at,
         selected: application.selected_at !== null,
-        canUnselectBeforeAttendance:
-          actor.party === "recruiter" &&
-          application.selected_at !== null &&
-          application.selected_by === actor.userId &&
-          opportunity.status === "published" &&
-          opportunity.closed_at === null &&
-          new Date(opportunity.closes_at) > now &&
-          new Date(opportunity.starts_at) > now,
+        canUnselectBeforeAttendance: canUnselectBySchedule && !hasReminderClaim,
       };
     },
     async loadEvents(applicationId) {

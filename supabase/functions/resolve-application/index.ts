@@ -98,9 +98,28 @@ async function readBoundedJson(request: Request): Promise<unknown> {
       throw new ResolveApplicationError("Receipt request is too large.", 413);
     }
   }
-  const body = new Uint8Array(await request.arrayBuffer());
-  if (body.byteLength > MAX_BODY_BYTES) {
-    throw new ResolveApplicationError("Receipt request is too large.", 413);
+  if (request.body === null) {
+    throw new ResolveApplicationError("Invalid application receipt.", 400);
+  }
+  // Stop reading as soon as the limit is passed, even without Content-Length.
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_BODY_BYTES) {
+      await reader.cancel();
+      throw new ResolveApplicationError("Receipt request is too large.", 413);
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
   }
   try {
     return JSON.parse(

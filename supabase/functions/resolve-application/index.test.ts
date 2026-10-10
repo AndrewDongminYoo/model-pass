@@ -120,3 +120,31 @@ function assertEquals(actual: unknown, expected: unknown): void {
     throw new Error(`Expected ${expectedJson}, received ${actualJson}.`);
   }
 }
+
+registerTest(
+  "stops reading a body without Content-Length once it is too large",
+  async () => {
+    const test = createDependencies();
+    let pulledChunks = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulledChunks += 1;
+        if (pulledChunks > 5) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(new Uint8Array(1024));
+      },
+    });
+    const response = await createResolveApplicationHandler(test.dependencies)(
+      new Request("http://localhost/functions/v1/resolve-application", {
+        method: "POST",
+        body,
+      }),
+    );
+
+    assertEquals(response.status, 413);
+    assertEquals(pulledChunks <= 3, true);
+    assertEquals(test.lookups.length, 0);
+  },
+);

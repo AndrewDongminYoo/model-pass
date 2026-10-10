@@ -130,6 +130,7 @@ export function ApplicationLookupPage() {
         </label>
         <input
           id="lookup-private-management-code"
+          type="password"
           value={submissionAttemptId}
           autoComplete="off"
           aria-describedby={errorMessage ? "lookup-error" : undefined}

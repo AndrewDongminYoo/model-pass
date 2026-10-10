@@ -104,6 +104,12 @@ export function HomePage() {
               </button>
             </form>
           )}
+          <p className="home-note">
+            {t("Already applied?", "이미 지원했나요?")}{" "}
+            <Link to="/applications/lookup">
+              {t("Check my application", "내 지원 확인하기")}
+            </Link>
+          </p>
         </section>
         {!isAit && (
           <section

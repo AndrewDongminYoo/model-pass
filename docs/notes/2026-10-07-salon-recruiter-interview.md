@@ -17,5 +17,5 @@ The platform's identity and fee model are researched separately in `2026-10-10-m
 ## Product Decisions Affected
 
 - Pre-appointment reminders (GitHub issue #9, #10): the no-show report supports a reminder, but the existing confirmation, symmetric no-show recording, and dispute flow already cover the recording side.
-- Fee positioning (GitHub issue #11): a recruiter-paid broker fee is the comparison point for the flat, non-contingent listing fee in `docs/specs/product.md` §Monetization Experiment.
+- Fee positioning (GitHub issue #11): the reported recruiter-paid platform fee, whose basis is not yet known, is the comparison point for the flat, non-contingent listing fee in `docs/specs/product.md` §Monetization Experiment.
 - Applicant deposits, no-show penalties, and automatic replacement stay out of scope; the interview does not change `docs/specs/product.md` §Trust and Attendance.

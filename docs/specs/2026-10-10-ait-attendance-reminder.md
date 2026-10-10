@@ -39,7 +39,9 @@ It never carries the applicant's name, phone number, birth date, receipt number,
 
 The console sets one landing URL per template, and variables are documented only for the body, so the landing route is fixed.
 The reminder lands on a fixed miniapp route, `/applications/lookup`, where the applicant enters the receipt number (application ID) and the private management code they already hold.
-The server resolves the opportunity from those two values and the route opens the existing attendance confirmation; a wrong pair reveals nothing beyond a generic error.
+The `resolve-application` function resolves the opportunity from those two values and the route renders the existing attendance confirmation and privacy controls directly; a wrong pair reveals nothing beyond a generic error.
+The route does not go through the application page, because `get-public-opportunity` answers a closed opportunity with HTTP 410 and the application page then shows only "이 공고를 볼 수 없습니다.", and a reminder usually arrives after the application deadline.
+The route exists on both the web and Apps in Toss surfaces, so web applicants also keep attendance and privacy access after the deadline, and the SMS or Kakao follow-up can land on it.
 If the console turns out to accept a per-message landing URL, this route still stays as the fallback entry for applicants who lost the original link.
 The copy must be transactional (appointment time and place, and a request to confirm or cancel) and must not promote other opportunities.
 The approved template is expected to be Korean-only; English copy is not a requirement for this channel.

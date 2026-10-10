@@ -146,6 +146,26 @@ registerTest("re-reads the time for each claim", async () => {
   assertEquals(test.claimTimes[0] === test.claimTimes[1], false);
 });
 
+registerTest(
+  "does not send when the appointment started after the claim",
+  async () => {
+    // Production break: a claim approved just before starts_at would still be sent late.
+    const test = createDependencies(
+      { a: { kind: "sent" } },
+      { now: () => new Date("2026-10-11T05:00:01.000Z") },
+    );
+
+    const result = await sendAttendanceReminders(test.dependencies);
+
+    assertEquals(test.calls.includes("send:a"), false);
+    assertEquals(
+      test.calls.includes("finish:reminder-a:failed:APPOINTMENT_STARTED"),
+      true,
+    );
+    assertEquals(result.failed, 1);
+  },
+);
+
 registerTest("skips a candidate that can no longer be claimed", async () => {
   const test = createDependencies(
     { a: { kind: "sent" } },

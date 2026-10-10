@@ -92,11 +92,17 @@ export async function sendAttendanceReminders(
     result.claimed += 1;
 
     let outcome: SendOutcome;
-    try {
-      outcome = await dependencies.send(claim);
-    } catch (error) {
-      dependencies.reportError("Reminder send threw.", error);
-      outcome = { kind: "ambiguous", code: "SENDER_ERROR" };
+    if (Date.parse(claim.startsAt) <= dependencies.now().getTime()) {
+      // The appointment began while the claim ran; nothing is sent, and the
+      // started appointment keeps the row out of every later candidate list.
+      outcome = { kind: "failed", code: "APPOINTMENT_STARTED" };
+    } else {
+      try {
+        outcome = await dependencies.send(claim);
+      } catch (error) {
+        dependencies.reportError("Reminder send threw.", error);
+        outcome = { kind: "ambiguous", code: "SENDER_ERROR" };
+      }
     }
 
     if (outcome.kind === "sent") {

@@ -14,13 +14,13 @@ Three candidates with similar names were seen:
 - **마이미모**, a beauty-model matching app (App Store id6754086453). Its store page returned HTTP 404 on 2026-10-10 in two locales, and the Google Play search for its name did not list it, so only web search-result snippets were seen; they describe free or materials-only treatments and paid photo or video model work.
 - **미모온** by TOMATO D&C (Google Play `kr.co.app.mimoon`), listed as an app for beauty professionals. Its detail page could not be read.
 
-On 2026-10-10 the operator searched for "미모" independently and narrowed the field to two services, both of which the operator reports offer the same kind of service:
+On 2026-10-10 the operator searched for "미모" independently and found two services, both of which the operator reports offer the same kind of service:
 
 1. **미모** ("미용인 모여라", app listed as 미모온), [site](https://mi-mo.co.kr), Instagram `mi.mo_office`. The operator reports that its app does not yet look finished.
 2. **미몽**, Instagram `meemong_official`. The operator reports that it appears to be VC-funded; see the funding section below.
 
-마이미모 is no longer treated as a candidate: it did not appear in the operator's search or the Google Play search, and its App Store page returns HTTP 404.
-Which of the two the interviewee meant is still unknown.
+마이미모 stays a low-confidence candidate: its name contains "미모" and it was described as a beauty-model matching app, but it did not appear in the operator's search or the Google Play search, and its App Store page returns HTTP 404. That shows it is not currently listed, not that the interviewee could not have meant it.
+Which app the interviewee meant is still unknown.
 Nothing in this note links either company to the fee complaint in the interview; that link waits for the interviewee's confirmation.
 
 ## 미모 Site Facts
@@ -65,6 +65,6 @@ The article itself and the THE VC funding page (HTTP 403) were not read, so that
 
 ## Next Step
 
-Ask the interviewee whether "미모" means 미모 (mi-mo.co.kr) or 미몽, what exactly the recruiter purchased (or ask to see the app), what the recruiter pays and on what basis, and whether the platform handles no-shows.
+Ask the interviewee which app "미모" refers to, as an open question (미모 at mi-mo.co.kr, 미몽, 마이미모, or another), what exactly the recruiter purchased (or ask to see the app), what the recruiter pays and on what basis, and whether the platform handles no-shows.
 Alternatively, read the in-app recruiter pricing with a designer account.
 Until then, GitHub issue #11 must not quote a competitor fee.

@@ -43,7 +43,8 @@ If the review requires one, `requestNotificationAgreement` is added in a separat
 - A missing key (`undefined`, `'ERROR'`, `'INVALID_CATEGORY'`, or the web surface) never blocks submission.
 - `submit-application` validates the key and writes it to a dedicated table. No client or recruiter can read that table under Row Level Security.
 - The key is used only for reminders about the current application. It is never used for future-opportunity alerts, which keep their separate optional consent.
-- The key is deleted together with the applicant's personal fields in applicant privacy deletion and in scheduled post-closure deletion. Both functions scrub the application row rather than delete it, so a foreign-key cascade alone is not enough.
+- The key has no use after the appointment starts, so each sender run deletes the keys of applications whose appointment has started.
+- The key is also deleted wherever the applicant's personal fields are scrubbed. Today that is `fulfill_applicant_deletion_request` (last defined in `supabase/migrations/202609220011_scheduled_closure_deletion.sql`), which scrubs the application row rather than deleting it, so a foreign-key cascade alone is not enough.
 
 ## Server Call
 

@@ -358,13 +358,15 @@ export function createSupabaseDependencies(
         opportunity.closed_at === null &&
         new Date(opportunity.closes_at) > now &&
         new Date(opportunity.starts_at) > now;
-      // unselect_application_for_recruiter refuses once a reminder is claimed.
+      // unselect_application_for_recruiter refuses once a reminder is in
+      // flight, sent, or ambiguous; a failed-only reminder stays reversible.
       let hasReminderClaim = false;
       if (canUnselectBySchedule) {
         const { count, error: reminderError } = await client
           .from("attendance_reminders")
           .select("id", { count: "exact", head: true })
-          .eq("application_id", application.id);
+          .eq("application_id", application.id)
+          .or("result.is.null,result.eq.sent");
         if (reminderError !== null) throw reminderError;
         hasReminderClaim = (count ?? 0) > 0;
       }

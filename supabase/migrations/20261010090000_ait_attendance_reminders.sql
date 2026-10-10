@@ -191,8 +191,9 @@ from public, anon, authenticated;
 grant execute on function public.delete_started_toss_recipients(timestamptz)
 to service_role;
 
--- Unselection is refused once a reminder is claimed; the recruiter records
--- recruiter_cancelled instead.
+-- Unselection is refused once a reminder is in flight, sent, or ambiguous; the
+-- recruiter records recruiter_cancelled instead. A failed-only reminder reached
+-- nobody, so unselection deletes it and stays allowed.
 create or replace function public.unselect_application_for_recruiter(
   p_application_id uuid,
   p_opportunity_id uuid,
@@ -234,9 +235,13 @@ begin
   ) or exists (
     select 1 from public.attendance_reminders reminder
     where reminder.application_id = p_application_id
+      and reminder.result is distinct from 'failed'
   ) then
     return null;
   end if;
+
+  delete from public.attendance_reminders reminder
+  where reminder.application_id = target_application.id;
 
   update public.applications application
   set selected_at = null,

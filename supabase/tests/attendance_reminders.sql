@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(20);
+select plan(22);
 
 select ok(
   (select relrowsecurity from pg_class where oid = 'public.application_toss_recipients'::regclass),
@@ -226,6 +226,30 @@ select is(
   ),
   null,
   'a recruiter cannot unselect an application after its reminder is claimed'
+);
+
+update public.attendance_reminders
+set result = 'failed', failure_code = 'INVALID_PARAMETER'
+where application_id = '00000000-0000-4000-8000-000000000715';
+
+select isnt(
+  public.unselect_application_for_recruiter(
+    '00000000-0000-4000-8000-000000000715',
+    '00000000-0000-4000-8000-000000000071',
+    '10000000-0000-4000-8000-000000000071'
+  ),
+  null,
+  'a recruiter can unselect an application whose reminder only failed'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.attendance_reminders
+    where application_id = '00000000-0000-4000-8000-000000000715'
+  ),
+  0::bigint,
+  'unselection deletes the failed reminder so it cannot be reclaimed'
 );
 
 select is(

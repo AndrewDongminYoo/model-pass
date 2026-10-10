@@ -61,7 +61,8 @@ If the review requires one, `requestNotificationAgreement` is added in a separat
 - The sender runs as a Supabase Edge Function using `Deno.createHttpClient({ cert, key })`. The certificate and key are Edge Function secrets and never reach the client bundle.
 - The supabase/edge-runtime source exposes `Deno.createHttpClient` (`ext/runtime/js/denoOverrides.js`, checked 2026-10-10), but whether the hosted runtime honors `cert` and `key` is unverified. The first implementation task proves it with a smoke call. If it fails, the fallback is a Node `https.Agent` sender in the scheduled GitHub Actions job; only one sender is built.
 - Each send is claimed by inserting or reclaiming the reminder row before the API call (`unique (application_id, kind)`), so overlapping runs cannot send twice.
-- An explicit failure (an HTTP 4xx response, or `resultType: "FAIL"` even with HTTP 200) marks the row `failed` with its failure code, and a later run may reclaim it, up to three attempts in total.
+- A configuration failure (HTTP 401 or 403, which the API documents as authentication and send-permission errors) stops the run and releases the claim without consuming the application's attempt, so a broken certificate or template does not exhaust every application's retry budget.
+- Any other explicit failure (HTTP 400, or `resultType: "FAIL"` even with HTTP 200) marks the row `failed` with its failure code, and a later run may reclaim it, up to three attempts in total.
 - An ambiguous outcome (timeout, network error, or HTTP 5xx) leaves the row claimed without a result and is never retried automatically, because the message may already have been delivered.
 - When the certificate or template code secret is absent, the function sends nothing and reports that state explicitly.
 

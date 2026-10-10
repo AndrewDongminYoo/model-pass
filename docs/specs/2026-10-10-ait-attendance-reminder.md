@@ -23,7 +23,8 @@ Send at most one `day_before` reminder per application when all of these hold at
 - No `day_before` reminder row exists for the application, or the existing row is a retryable explicit failure (see §Server Call).
 
 Claiming a reminder locks the application row and re-checks this rule in the same transaction.
-Once a reminder row exists, `unselect_application_for_recruiter` refuses to unselect the application, so an applicant is never asked to confirm an appointment the recruiter has silently withdrawn; the recruiter records `recruiter_cancelled` instead, which keeps the attendance history symmetric.
+Once a reminder row is in flight, sent, or ambiguous (any state other than `failed`), `unselect_application_for_recruiter` refuses to unselect the application, so an applicant is never asked to confirm an appointment the recruiter has silently withdrawn; the recruiter records `recruiter_cancelled` instead, which keeps the attendance history symmetric.
+When the only reminder row is `failed`, nothing reached the applicant, so a mistaken selection stays reversible: unselection deletes that row in the same transaction so it cannot be reclaimed.
 A cancellation recorded in the seconds between a committed claim and the partner API call is an accepted residual risk: no cancellation message is sent in this version, and the lookup route shows the recruiter's cancellation when the applicant opens it.
 
 The scheduler runs hourly, so the effective lead time is between 23 and 24 hours, plus scheduler delay.
@@ -62,7 +63,7 @@ If the review requires one, `requestNotificationAgreement` is added in a separat
 - The supabase/edge-runtime source exposes `Deno.createHttpClient` (`ext/runtime/js/denoOverrides.js`, checked 2026-10-10), but whether the hosted runtime honors `cert` and `key` is unverified. The first implementation task proves it with a smoke call. If it fails, the fallback is a Node `https.Agent` sender in the scheduled GitHub Actions job; only one sender is built.
 - Each send is claimed by inserting or reclaiming the reminder row before the API call (`unique (application_id, kind)`), so overlapping runs cannot send twice.
 - A configuration failure (HTTP 401 or 403, which the API documents as authentication and send-permission errors) stops the run and releases the claim without consuming the application's attempt, so a broken certificate or template does not exhaust every application's retry budget.
-- Any other explicit failure (HTTP 400, or `resultType: "FAIL"` even with HTTP 200) marks the row `failed` with its failure code, and a later run may reclaim it, up to three attempts in total.
+- Any other explicit failure (HTTP 400, `resultType: "FAIL"` even with HTTP 200, or a `SUCCESS` envelope in which every `sent*Count` is zero) marks the row `failed` with its failure code, and a later run may reclaim it, up to three attempts in total.
 - An ambiguous outcome (timeout, network error, or HTTP 5xx) leaves the row claimed without a result and is never retried automatically, because the message may already have been delivered.
 - When the certificate or template code secret is absent, the function sends nothing and reports that state explicitly.
 

@@ -25,7 +25,7 @@ From the Korean App Store page, version 4.8.6 released 2026-10-03:
 - Models join designer portfolios "무료 또는 재료비만으로". A search-result snippet of another-locale listing says model terms such as free treatment, materials cost, or model pay are shown in advance.
 - In-app purchases include an in-app currency, "몽", from KRW 6,500 (100 몽) to KRW 104,000 (3,200 몽), "빠른매칭 프리미엄 공고 등록" at KRW 6,200, and a one-month ad removal at KRW 4,500.
 
-A [dealsite article](https://dealsite.co.kr/articles/87629) (byline dated 2022-06-02; first shown on the paid Dealsite Plus service on 2022-05-31) describes 미몽 as a service platform for hair designers that planned a paid model by the end of 2022.
+A [dealsite article](https://dealsite.co.kr/articles/87629) (byline dated 2022-06-02; first shown on the paid Dealsite Plus service on 2022-05-31) describes 미몽 as a service platform for hair designers that planned to launch a paid service (revenue) model by the end of 2022 ("연말까지 유료 모델을 출시해 수익성을 확보").
 
 ## Unknowns
 
@@ -36,6 +36,6 @@ A [dealsite article](https://dealsite.co.kr/articles/87629) (byline dated 2022-0
 
 ## Next Step
 
-Ask the interviewee which app "미모" refers to, what the recruiter pays per model or per post, and whether the platform handles no-shows.
+Ask the interviewee which app "미모" refers to, what the recruiter pays and on what basis, and whether the platform handles no-shows.
 Alternatively, read the in-app recruiter pricing with a designer account.
 Until then, GitHub issue #11 must not quote a competitor fee.

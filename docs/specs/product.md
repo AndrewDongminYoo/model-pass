@@ -153,6 +153,9 @@ Both sides can dispute a record, and the operator must preserve the original eve
 The product does not require applicant deposits.
 The platform does not automatically choose or contact a replacement applicant in version 1.
 
+Pre-appointment reminders start with Apps in Toss functional push for miniapp applicants, as decided on 2026-10-10 and specified in `docs/specs/2026-10-10-ait-attendance-reminder.md`.
+SMS or Kakao reminders for web applicants are follow-up work.
+
 ## Monetization Experiment
 
 The applicant side is free.

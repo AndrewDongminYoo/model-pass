@@ -3,7 +3,11 @@
 
 create table public.application_toss_recipients (
   application_id uuid primary key references public.applications(id) on delete cascade,
-  anon_key text not null check (anon_key ~ '^[\x21-\x7e]{1,512}$'),
+  -- PostgreSQL regex bounds stop at 255, so the length is checked separately.
+  anon_key text not null check (
+    char_length(anon_key) between 1 and 512
+    and anon_key ~ '^[\x21-\x7e]+$'
+  ),
   created_at timestamptz not null default now()
 );
 

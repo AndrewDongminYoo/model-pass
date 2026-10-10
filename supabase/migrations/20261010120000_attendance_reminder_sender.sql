@@ -18,6 +18,20 @@ as $$
     on recipient.application_id = application.id
   where application.submission_state = 'submitted'
     and application.selected_at is not null
+    -- Mirrors claim_attendance_reminder so ineligible rows cannot fill the cap.
+    and not exists (
+      select 1
+      from public.attendance_events event
+      where event.application_id = application.id
+        and event.event_type in (
+          'applicant_confirmed',
+          'applicant_cancelled',
+          'recruiter_cancelled',
+          'completed',
+          'applicant_no_show',
+          'recruiter_no_show'
+        )
+    )
     and opportunity.starts_at > p_now
     and opportunity.starts_at <= p_now + interval '24 hours'
     and not exists (

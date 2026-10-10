@@ -61,7 +61,8 @@ from (
     ('00000000-0000-4000-8000-000000000812', '00000000-0000-4000-8000-000000000081'),
     ('00000000-0000-4000-8000-000000000813', '00000000-0000-4000-8000-000000000082'),
     ('00000000-0000-4000-8000-000000000814', '00000000-0000-4000-8000-000000000081'),
-    ('00000000-0000-4000-8000-000000000815', '00000000-0000-4000-8000-000000000081')
+    ('00000000-0000-4000-8000-000000000815', '00000000-0000-4000-8000-000000000081'),
+    ('00000000-0000-4000-8000-000000000816', '00000000-0000-4000-8000-000000000081')
 ) as fixture(application_id, opportunity_id);
 
 update public.applications
@@ -78,7 +79,20 @@ values
   ('00000000-0000-4000-8000-000000000811', 'anon-811'),
   ('00000000-0000-4000-8000-000000000813', 'anon-813'),
   ('00000000-0000-4000-8000-000000000814', 'anon-814'),
-  ('00000000-0000-4000-8000-000000000815', 'anon-815');
+  ('00000000-0000-4000-8000-000000000815', 'anon-815'),
+  ('00000000-0000-4000-8000-000000000816', 'anon-816');
+
+-- 816 already confirmed attendance, so it must not crowd the capped list.
+insert into public.attendance_events (
+  application_id, recorded_by, actor_party, party, event_type
+)
+values (
+  '00000000-0000-4000-8000-000000000816',
+  null,
+  'applicant',
+  'applicant',
+  'applicant_confirmed'
+);
 
 select ok(
   not has_function_privilege('anon', 'public.list_attendance_reminder_candidates(timestamptz)', 'EXECUTE')
@@ -93,7 +107,7 @@ select set_eq(
     ('00000000-0000-4000-8000-000000000811'::uuid),
     ('00000000-0000-4000-8000-000000000814'::uuid),
     ('00000000-0000-4000-8000-000000000815'::uuid) $$,
-  'candidates need a recipient key and an appointment within 24 hours'
+  'candidates need a recipient key, an appointment within 24 hours, and no confirmation or final outcome'
 );
 
 create temporary table claim_811 as

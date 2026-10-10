@@ -13,6 +13,7 @@ import {
   getApplicationPhotoStatus,
   uploadApplicationPhoto,
 } from "../api/application-photos";
+import { captureTossAnonymousKey } from "../../../lib/apps-in-toss/anonymous-key";
 import { AttendanceManager } from "../../attendance/components/AttendanceManager";
 import { ApplicantPrivacyControls } from "../../privacy/components/ApplicantPrivacyControls";
 import { useI18n } from "../../../i18n/locale";
@@ -399,7 +400,9 @@ export function ApplicationForm({ opportunity }: ApplicationFormProps) {
     setPending(true);
     setSubmitError(undefined);
     try {
+      const tossAnonKey = await captureTossAnonymousKey();
       const result = await submitApplication({
+        ...(tossAnonKey === null ? {} : { tossAnonKey }),
         opportunityId: opportunity.id,
         submissionAttemptId,
         applicant: {

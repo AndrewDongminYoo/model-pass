@@ -85,6 +85,10 @@ export interface SubmissionDependencies {
   persistApplication: (
     command: ApplicationPersistenceCommand,
   ) => Promise<ApplicationPersistenceResult>;
+  recordTossRecipient: (
+    applicationId: string,
+    anonKey: string,
+  ) => Promise<void>;
 }
 
 interface OpportunityRow {
@@ -274,6 +278,18 @@ export async function submitApplication(
     submissionFingerprint,
   });
 
+  // The reminder key is optional, so a failed write must not fail the submission.
+  if (parsedInput.tossAnonKey !== undefined) {
+    try {
+      await dependencies.recordTossRecipient(
+        persistenceResult.applicationId,
+        parsedInput.tossAnonKey,
+      );
+    } catch (error) {
+      console.error("Failed to record the Apps in Toss recipient.", error);
+    }
+  }
+
   return persistenceResult;
 }
 
@@ -456,6 +472,19 @@ export function createSupabaseDependencies(
       }
 
       return { ...persistedResult, submissionState };
+    },
+    async recordTossRecipient(applicationId, anonKey) {
+      const { error } = await client
+        .from("application_toss_recipients")
+        .upsert(
+          { application_id: applicationId, anon_key: anonKey },
+          { onConflict: "application_id", ignoreDuplicates: true },
+        );
+      if (error !== null) {
+        throw new Error(
+          `Failed to record the Apps in Toss recipient: ${error.message}`,
+        );
+      }
     },
   };
 }

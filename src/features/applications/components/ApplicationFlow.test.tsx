@@ -14,12 +14,14 @@ import { ApplyPage } from "../routes/ApplyPage";
 import { ApplicationForm } from "./ApplicationForm";
 
 const {
+  captureTossAnonymousKeyMock,
   getApplicationPhotoStatusMock,
   getAttendanceMock,
   getPublicOpportunityMock,
   submitApplicationMock,
   uploadApplicationPhotoMock,
 } = vi.hoisted(() => ({
+  captureTossAnonymousKeyMock: vi.fn(),
   getApplicationPhotoStatusMock: vi.fn(),
   getAttendanceMock: vi.fn(),
   getPublicOpportunityMock: vi.fn(),
@@ -43,6 +45,10 @@ vi.mock("../api/submit-application", async (importOriginal) => {
     await importOriginal<typeof import("../api/submit-application")>();
   return { ...original, submitApplication: submitApplicationMock };
 });
+
+vi.mock("../../../lib/apps-in-toss/anonymous-key", () => ({
+  captureTossAnonymousKey: captureTossAnonymousKeyMock,
+}));
 
 vi.mock("../api/application-photos", async (importOriginal) => {
   const original =
@@ -128,6 +134,7 @@ const photoOpportunity: PublicOpportunity = {
 };
 
 beforeEach(() => {
+  captureTossAnonymousKeyMock.mockResolvedValue(null);
   getAttendanceMock.mockResolvedValue({
     applicationId,
     viewerParty: "applicant",
@@ -534,6 +541,24 @@ it("defaults future alerts to unchecked and submits false", async () => {
     currentApplicationConsent: true,
     futureOpportunityConsent: false,
   });
+});
+
+it("sends the Apps in Toss recipient key when one is captured", async () => {
+  // Production break: dropping the captured key means miniapp applicants never get a reminder.
+  const user = userEvent.setup();
+  captureTossAnonymousKeyMock.mockResolvedValue("anon-key-123");
+  submitApplicationMock.mockResolvedValue(successfulSubmission());
+  render(<ApplicationForm opportunity={makeupOpportunity} />);
+  await reachApplicationForm(user);
+  await completeContactFields(user);
+  await user.click(
+    screen.getByLabelText("이 공고 지원을 위한 개인정보 처리에 동의합니다"),
+  );
+  await user.click(screen.getByRole("button", { name: "지원서 제출" }));
+
+  expect(submitApplicationMock).toHaveBeenCalledWith(
+    expect.objectContaining({ tossAnonKey: "anon-key-123" }),
+  );
 });
 
 it("preserves answers after a recoverable submit error and allows retry", async () => {

@@ -78,9 +78,11 @@ function createDependencies(
     existingAttempt?: ExistingApplicationAttempt | null;
     persistenceResult?: ApplicationPersistenceResult;
     quotaAllowed?: boolean;
+    recipientWriteFails?: boolean;
   } = {},
 ) {
   const persisted: ApplicationPersistenceCommand[] = [];
+  const recordedRecipients: { applicationId: string; anonKey: string }[] = [];
   let opportunityLoadCount = 0;
   let quotaConsumptionCount = 0;
   const quotaCalls: unknown[][] = [];
@@ -106,11 +108,22 @@ function createDependencies(
         },
       );
     },
+    recordTossRecipient: (recordedApplicationId, anonKey) => {
+      if (options.recipientWriteFails === true) {
+        return Promise.reject(new Error("recipient write failed"));
+      }
+      recordedRecipients.push({
+        applicationId: recordedApplicationId,
+        anonKey,
+      });
+      return Promise.resolve();
+    },
   };
 
   return {
     dependencies,
     persisted,
+    recordedRecipients,
     getOpportunityLoadCount: () => opportunityLoadCount,
     getQuotaConsumptionCount: () => quotaConsumptionCount,
     quotaCalls,
@@ -124,6 +137,74 @@ registerTest("binds anonymous quota to the submission attempt", async () => {
   assertEquals(test.quotaCalls, [
     [createOpportunity().id, "a".repeat(64), submissionAttemptId],
   ]);
+});
+
+registerTest(
+  "records the Apps in Toss recipient key after persisting",
+  async () => {
+    const test = createDependencies();
+    await submitApplication(
+      createInput({ tossAnonKey: "anon-key-123" }),
+      test.dependencies,
+    );
+
+    assertEquals(test.persisted.length, 1);
+    assertEquals(test.recordedRecipients, [
+      { applicationId, anonKey: "anon-key-123" },
+    ]);
+  },
+);
+
+registerTest("does not record a recipient without a key", async () => {
+  const test = createDependencies();
+  await submitApplication(createInput(), test.dependencies);
+
+  assertEquals(test.recordedRecipients, []);
+});
+
+registerTest(
+  "keeps the submission when the recipient write fails",
+  async () => {
+    const test = createDependencies(createOpportunity(), now, {
+      recipientWriteFails: true,
+    });
+    const result = await submitApplication(
+      createInput({ tossAnonKey: "anon-key-123" }),
+      test.dependencies,
+    );
+
+    assertEquals(result.applicationId, applicationId);
+    assertEquals(test.persisted.length, 1);
+  },
+);
+
+registerTest(
+  "excludes the recipient key from the submission fingerprint",
+  async () => {
+    const withoutKey = createDependencies();
+    await submitApplication(createInput(), withoutKey.dependencies);
+    const withKey = createDependencies();
+    await submitApplication(
+      createInput({ tossAnonKey: "anon-key-123" }),
+      withKey.dependencies,
+    );
+
+    assertEquals(
+      requireFirstCommand(withKey.persisted).submissionFingerprint,
+      requireFirstCommand(withoutKey.persisted).submissionFingerprint,
+    );
+  },
+);
+
+registerTest("rejects a malformed recipient key", async () => {
+  const test = createDependencies();
+  await expectValidationError(() =>
+    submitApplication(
+      createInput({ tossAnonKey: "has space" }),
+      test.dependencies,
+    ),
+  );
+  assertEquals(test.persisted.length, 0);
 });
 
 registerTest(

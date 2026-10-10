@@ -883,6 +883,33 @@ registerTest(
 );
 
 registerTest(
+  "records the recipient key on a matching retry after response loss",
+  async () => {
+    // Production break: returning the existing attempt early drops a key captured only on the retry.
+    const first = createDependencies();
+    const committed = await submitApplication(
+      createInput(),
+      first.dependencies,
+    );
+    const firstCommand = requireFirstCommand(first.persisted);
+    const retry = createDependencies(createOpportunity(), now, {
+      existingAttempt: existingAttempt(firstCommand, committed.evaluation),
+    });
+
+    const recovered = await submitApplication(
+      createInput({ tossAnonKey: "anon-key-123" }),
+      retry.dependencies,
+    );
+
+    assertEquals(recovered.applicationId, applicationId);
+    assertEquals(retry.persisted.length, 0);
+    assertEquals(retry.recordedRecipients, [
+      { applicationId, anonKey: "anon-key-123" },
+    ]);
+  },
+);
+
+registerTest(
   "returns the original receipt after response loss even when rules change",
   async () => {
     // Production break: recomputing a retry against changed rules rejects an application that already committed.

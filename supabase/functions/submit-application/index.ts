@@ -156,6 +156,11 @@ export async function submitApplication(
       );
     }
 
+    await recordTossRecipientBestEffort(
+      dependencies,
+      existingAttempt.applicationId,
+      parsedInput.tossAnonKey,
+    );
     return {
       applicationId: existingAttempt.applicationId,
       evaluation: existingAttempt.evaluation,
@@ -278,19 +283,28 @@ export async function submitApplication(
     submissionFingerprint,
   });
 
-  // The reminder key is optional, so a failed write must not fail the submission.
-  if (parsedInput.tossAnonKey !== undefined) {
-    try {
-      await dependencies.recordTossRecipient(
-        persistenceResult.applicationId,
-        parsedInput.tossAnonKey,
-      );
-    } catch (error) {
-      console.error("Failed to record the Apps in Toss recipient.", error);
-    }
-  }
-
+  await recordTossRecipientBestEffort(
+    dependencies,
+    persistenceResult.applicationId,
+    parsedInput.tossAnonKey,
+  );
   return persistenceResult;
+}
+
+// The reminder key is optional, so a failed write must not fail the submission.
+async function recordTossRecipientBestEffort(
+  dependencies: SubmissionDependencies,
+  applicationId: string,
+  anonKey: string | undefined,
+): Promise<void> {
+  if (anonKey === undefined) {
+    return;
+  }
+  try {
+    await dependencies.recordTossRecipient(applicationId, anonKey);
+  } catch (error) {
+    console.error("Failed to record the Apps in Toss recipient.", error);
+  }
 }
 
 export function deriveSubmissionState(

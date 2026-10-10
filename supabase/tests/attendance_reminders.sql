@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(17);
+select plan(20);
 
 select ok(
   (select relrowsecurity from pg_class where oid = 'public.application_toss_recipients'::regclass),
@@ -229,8 +229,66 @@ select is(
 );
 
 select is(
+  public.record_toss_recipient(
+    '00000000-0000-4000-8000-000000000714', 'anon-714'
+  ),
+  true,
+  'a recipient key is recorded before the appointment starts'
+);
+
+insert into public.opportunities (
+  id, recruiter_id, category, title, starts_at, closes_at, venue_district,
+  expected_minutes, benefit, status, ruleset_id, ruleset_version, rules_snapshot
+)
+values (
+  '00000000-0000-4000-8000-000000000073',
+  '10000000-0000-4000-8000-000000000071',
+  'hair_promotion', 'Reminder started opportunity',
+  now() - interval '1 hour', now() - interval '2 hours', 'Gangnam-gu',
+  120, '{"type":"procedure","description":"Hair service"}', 'published',
+  'hair-promotion', 1, '[]'
+);
+
+insert into public.applications (
+  id, opportunity_id, submission_attempt_id, submission_fingerprint,
+  applicant_display_name, applicant_phone, applicant_birth_date,
+  ruleset_id, ruleset_version, rules_snapshot, evaluation_snapshot
+)
+values (
+  '00000000-0000-4000-8000-000000000716',
+  '00000000-0000-4000-8000-000000000073',
+  gen_random_uuid(),
+  repeat('7', 64),
+  'Reminder applicant',
+  '010-0000-0007',
+  '2000-01-01',
+  'hair-promotion',
+  1,
+  '[]',
+  '{"rulesetId":"hair-promotion","rulesetVersion":1,"eligible":true,"failures":[],"reviews":[],"reminders":[]}'
+);
+
+select is(
+  public.record_toss_recipient(
+    '00000000-0000-4000-8000-000000000716', 'anon-716'
+  ),
+  false,
+  'a recipient key is not recorded after the appointment starts'
+);
+
+select is(
+  (
+    select count(*)::bigint
+    from public.application_toss_recipients
+    where application_id = '00000000-0000-4000-8000-000000000716'
+  ),
+  0::bigint,
+  'a late retry does not recreate a deleted recipient key'
+);
+
+select is(
   public.delete_started_toss_recipients(now() + interval '13 hours'),
-  3,
+  4,
   'recipient keys are deleted once their appointment has started'
 );
 

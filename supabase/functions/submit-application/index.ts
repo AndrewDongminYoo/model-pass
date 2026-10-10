@@ -488,12 +488,11 @@ export function createSupabaseDependencies(
       return { ...persistedResult, submissionState };
     },
     async recordTossRecipient(applicationId, anonKey) {
-      const { error } = await client
-        .from("application_toss_recipients")
-        .upsert(
-          { application_id: applicationId, anon_key: anonKey },
-          { onConflict: "application_id", ignoreDuplicates: true },
-        );
+      // The function skips the write once the appointment has started.
+      const { error } = await client.rpc("record_toss_recipient", {
+        p_application_id: applicationId,
+        p_anon_key: anonKey,
+      });
       if (error !== null) {
         throw new Error(
           `Failed to record the Apps in Toss recipient: ${error.message}`,

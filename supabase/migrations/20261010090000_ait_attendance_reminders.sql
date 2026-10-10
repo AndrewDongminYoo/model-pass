@@ -14,6 +14,39 @@ create table public.application_toss_recipients (
 alter table public.application_toss_recipients enable row level security;
 revoke all on table public.application_toss_recipients from public, anon, authenticated;
 
+-- Records the key only while the appointment is still ahead, so a delayed
+-- submission retry cannot recreate a key that cleanup already removed.
+create function public.record_toss_recipient(
+  p_application_id uuid,
+  p_anon_key text
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_catalog
+as $$
+declare
+  inserted_count integer;
+begin
+  insert into public.application_toss_recipients (application_id, anon_key)
+  select application.id, p_anon_key
+  from public.applications application
+  join public.opportunities opportunity
+    on opportunity.id = application.opportunity_id
+  where application.id = p_application_id
+    and opportunity.starts_at > now()
+  on conflict (application_id) do nothing;
+
+  get diagnostics inserted_count = row_count;
+  return inserted_count > 0;
+end;
+$$;
+
+revoke all on function public.record_toss_recipient(uuid, text)
+from public, anon, authenticated;
+grant execute on function public.record_toss_recipient(uuid, text)
+to service_role;
+
 create table public.attendance_reminders (
   id uuid primary key default gen_random_uuid(),
   application_id uuid not null references public.applications(id) on delete cascade,

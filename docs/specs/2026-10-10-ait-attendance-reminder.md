@@ -70,6 +70,8 @@ If the review requires one, `requestNotificationAgreement` is added in a separat
 - The first ambiguous outcome also stops the run, so a shared outage such as an mTLS or DNS failure leaves at most one application ambiguous instead of every eligible one.
 - When the certificate or template code secret is absent, the function sends nothing and reports `notConfigured`; it still deletes recipient keys whose appointment has started, because AIT submissions already store keys.
 - The scheduled workflow runs only when the repository variable `MODEL_PASS_REMINDERS_ENABLED` is `true`, so it does not fail hourly before the function is deployed; a configuration failure or an ambiguous outcome fails the workflow run so the operator sees it.
+- Enablement order: apply the migrations, deploy the function with only `ATTENDANCE_REMINDER_TOKEN`, then set the variable. Hourly runs then delete started recipient keys while sending stays `notConfigured`. The miniapp notice promises that deletion, so this must happen before any bundle that shows the notice reaches applicants; the certificate and template secrets are added later.
+- Each run stops claiming new candidates after 60 seconds, well inside the workflow's 120-second request timeout, so a run is not cut off between a claim and its recorded outcome.
 
 ## External Preconditions
 

@@ -13,8 +13,11 @@ concurrency:
 
 jobs:
   send:
-    # Stays off until send-attendance-reminders is deployed and configured;
-    # set the repository variable MODEL_PASS_REMINDERS_ENABLED to "true".
+    # Stays off until send-attendance-reminders is deployed. Deploying it with
+    # only ATTENDANCE_REMINDER_TOKEN is enough: without the certificate and
+    # template it reports notConfigured but still deletes started recipient
+    # keys, which the miniapp notice promises. Then set the repository
+    # variable MODEL_PASS_REMINDERS_ENABLED to "true".
     if: github.event_name == 'workflow_dispatch' || vars.MODEL_PASS_REMINDERS_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10

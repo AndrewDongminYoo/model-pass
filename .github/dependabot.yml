@@ -1,0 +1,72 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    groups:
+      github-actions-minor-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+      github-actions-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    groups:
+      npm-minor-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+      npm-security:
+        applies-to: security-updates
+        patterns:
+          - '*'
+  - package-ecosystem: deno
+    directories:
+      - /supabase/functions/cleanup-expired-photos
+      - /supabase/functions/close-opportunity
+      - /supabase/functions/create-photo-upload
+      - /supabase/functions/create-photo-view
+      - /supabase/functions/get-attendance
+      - /supabase/functions/get-public-opportunity
+      - /supabase/functions/manage-applicant-privacy
+      - /supabase/functions/publish-opportunity
+      - /supabase/functions/record-attendance
+      - /supabase/functions/resolve-application
+      - /supabase/functions/select-application
+      - /supabase/functions/send-attendance-reminders
+      - /supabase/functions/submit-application
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Seoul
+    open-pull-requests-limit: 3
+    groups:
+      deno-minor-patch:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+      deno-security:
+        applies-to: security-updates
+        patterns:
+          - '*'

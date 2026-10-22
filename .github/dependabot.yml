@@ -5,39 +5,37 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: "09:00"
       timezone: Asia/Seoul
     open-pull-requests-limit: 3
     groups:
       github-actions-minor-patch:
         patterns:
-          - '*'
+          - "*"
         update-types:
           - minor
           - patch
       github-actions-security:
         applies-to: security-updates
         patterns:
-          - '*'
+          - "*"
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
       day: monday
-      time: "09:00"
       timezone: Asia/Seoul
     open-pull-requests-limit: 3
     groups:
       npm-minor-patch:
         patterns:
-          - '*'
+          - "*"
         update-types:
           - minor
           - patch
       npm-security:
         applies-to: security-updates
         patterns:
-          - '*'
+          - "*"
   - package-ecosystem: deno
     directories:
       - /supabase/functions/cleanup-expired-photos
@@ -56,17 +54,16 @@ updates:
     schedule:
       interval: weekly
       day: monday
-      time: "09:00"
       timezone: Asia/Seoul
     open-pull-requests-limit: 3
     groups:
       deno-minor-patch:
         patterns:
-          - '*'
+          - "*"
         update-types:
           - minor
           - patch
       deno-security:
         applies-to: security-updates
         patterns:
-          - '*'
+          - "*"

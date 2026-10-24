@@ -8,12 +8,10 @@ updates:
       timezone: Asia/Seoul
     open-pull-requests-limit: 3
     groups:
-      github-actions-minor-patch:
+      # Every version update, majors included, in one PR; CI runs the actions it bumps.
+      github-actions:
         patterns:
           - "*"
-        update-types:
-          - minor
-          - patch
       github-actions-security:
         applies-to: security-updates
         patterns:
@@ -25,6 +23,15 @@ updates:
       day: monday
       timezone: Asia/Seoul
     open-pull-requests-limit: 3
+    ignore:
+      # Runtime majors without a security fix stay off (operator, 2026-10-24); react and react-dom 19.3.1 came as #28.
+      # update-types limits this to version updates; security updates still open.
+      - dependency-name: "react"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "react-dom"
+        update-types:
+          - version-update:semver-major
     groups:
       npm-minor-patch:
         patterns:

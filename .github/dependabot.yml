@@ -22,7 +22,7 @@ updates:
       interval: weekly
       day: monday
       timezone: Asia/Seoul
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2
     ignore:
       # Runtime majors without a security fix stay off (operator, 2026-10-24); react and react-dom 19.3.1 came as #28.
       # update-types limits this to version updates; security updates still open.
@@ -62,7 +62,7 @@ updates:
       interval: weekly
       day: monday
       timezone: Asia/Seoul
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 2
     groups:
       deno-minor-patch:
         patterns:

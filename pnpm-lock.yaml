@@ -25,8 +25,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@apps-in-toss/web-framework':
-        specifier: 3.8.1
-        version: 3.8.1(typanion@3.14.0)(typescript@6.0.3)
+        specifier: 3.9.0
+        version: 3.9.0(typanion@3.14.0)(typescript@6.0.3)
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.13.0(jiti@2.7.0))
@@ -91,12 +91,12 @@ packages:
     resolution: {integrity: sha512-1no0CXOhPEeSCrGduT37KMmCqA6irhowXa0S7AaPHb4RQSHGioR3wvvD7HHBCaUriMYs0EvtqRJfOgYd0ycKlQ==}
     engines: {node: '>=24'}
 
-  '@apps-in-toss/cli@3.8.1':
-    resolution: {integrity: sha512-HKUxH2i3KqTvTdvEsR+gmugtEVTL8axdoOUwr8WUq8CO95fByuntjI9YefkD+EmuwjP1Aj77godlPP8po+9ADA==}
+  '@apps-in-toss/cli@3.9.0':
+    resolution: {integrity: sha512-snCigprheJojoZRqYtkHoZEYJDg5x5P4Th1MmJnHsUqhGKowr55urJ5ahDmgwFj1HQzTH4Co/df+vcLPlXciIQ==}
     hasBin: true
 
-  '@apps-in-toss/web-framework@3.8.1':
-    resolution: {integrity: sha512-ocuKctC56ivnYRC3PRUU66jWKJZCarmxXwnd0cY3GsOF2OLQ4j6BFRHOxgg4nXR3OKVC3aBYYuQLKaA/bDYlvA==}
+  '@apps-in-toss/web-framework@3.9.0':
+    resolution: {integrity: sha512-hGg1ri7KYbNZeeEiPFWy0efqv38sDuU8h4Ub/LldBZL/ZJy4D+1Ce3JNSX2qWDeLl+wfbb6hWdK3X9reJjEmPg==}
     hasBin: true
 
   '@asamuzakjp/css-color@7.1.7':
@@ -1823,7 +1823,7 @@ snapshots:
       '@apps-in-toss/ait-format-proto': 1.0.0
       fflate: 0.8.3
 
-  '@apps-in-toss/cli@3.8.1(typanion@3.14.0)':
+  '@apps-in-toss/cli@3.9.0(typanion@3.14.0)':
     dependencies:
       '@apps-in-toss/ait-format': 1.0.0
       '@clack/prompts': 1.8.1
@@ -1838,9 +1838,9 @@ snapshots:
       - supports-color
       - typanion
 
-  '@apps-in-toss/web-framework@3.8.1(typanion@3.14.0)(typescript@6.0.3)':
+  '@apps-in-toss/web-framework@3.9.0(typanion@3.14.0)(typescript@6.0.3)':
     dependencies:
-      '@apps-in-toss/cli': 3.8.1(typanion@3.14.0)
+      '@apps-in-toss/cli': 3.9.0(typanion@3.14.0)
       '@webview-bridge/web': 1.7.10
       semver: 7.8.5
       valibot: 1.5.0(typescript@6.0.3)

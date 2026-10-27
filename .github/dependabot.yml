@@ -63,6 +63,15 @@ updates:
       day: monday
       timezone: Asia/Seoul
     open-pull-requests-limit: 2
+    ignore:
+      # The JS package and the committed supabase/functions/create-photo-upload/magick.wasm must be updated together by hand.
+      # The committed file is the 0.0.43 build, and the 0.0.45 JS package of #32 failed four photo upload tests.
+      # update-types limits this to version updates; security updates still open.
+      - dependency-name: "@imagemagick/magick-wasm"
+        update-types:
+          - version-update:semver-patch
+          - version-update:semver-minor
+          - version-update:semver-major
     groups:
       deno-minor-patch:
         patterns:

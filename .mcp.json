@@ -7,7 +7,7 @@
         "clientId": "mcp-gateway"
       }
     },
-    "app-in-toss-docs": {
+    "apps-in-toss-docs": {
       "type": "http",
       "url": "https://developers-apps-in-toss.toss.im/~gitbook/mcp"
     },

@@ -1,0 +1,6 @@
+# osv-scanner suppressions. Every entry names the GHSA, the affected version, why no fix
+# exists today, when it was approved, and what event triggers re-evaluation.
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+reason = "minimatch@10.2.6 via the eslint@10.13.0 devDependency -> @eslint/config-array@0.23.5 has no compatible patch as of 2026-11-05: the advisory covers >= 7.0.0, < 11.0.1 and the only fix is minimatch 11.0.1, a major version. It is also reached through the typescript-eslint@8.72.0 devDependency -> @typescript-eslint/typescript-estree@8.72.0. The newest releases, eslint 10.14.0, @eslint/config-array 0.23.5 and @typescript-eslint/typescript-estree 8.72.1, still require minimatch ^10, so no upgrade within reach lifts it. Medium severity, denial of service through globparts amplification. Reached only by lint tooling, and no first-party source references minimatch. Approved on 2026-11-05. Re-evaluate when @eslint/config-array accepts minimatch 11."

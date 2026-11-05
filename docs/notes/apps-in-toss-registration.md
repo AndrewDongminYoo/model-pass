@@ -32,7 +32,7 @@ The interface defaults to Korean and supports an English switch across applicati
 
 ## Assets
 
-- Logo: `public/brand/model-pass-logo.png` (600 × 600 PNG); the operator selected the person-shaped design for readability at small sizes on 2026-09-23.
+- Logo: `public/brand/model-pass-logo.png` (600 × 600 PNG); the person-shaped design was selected for readability at small sizes on 2026-09-23.
 - Intro screenshot: `assets/apps-in-toss/screenshot-01-intro.png` (636 × 1048 PNG).
 - Opportunity screenshot: `assets/apps-in-toss/screenshot-02-opportunity.png` (636 × 1048 PNG).
 - Application screenshot: `assets/apps-in-toss/screenshot-03-application.png` (636 × 1048 PNG).
@@ -53,7 +53,7 @@ Packaging alone does not implement Toss Login or satisfy the service pre-review 
 
 ## Gates Before Registration or Review
 
-- Confirm the Korean and English names and the immutable `appName` with the operator.
+- Confirm the Korean and English names and the immutable `appName` with the user.
 - Verify the selected logo in the Apps in Toss console preview before submission.
 - Complete the product-spec service classification and platform pre-review for this recruitment use case.
 - Create the Model Pass miniapp in the verified personal workspace, then configure its exact console appName, terms, privacy links, and Toss Login settings.

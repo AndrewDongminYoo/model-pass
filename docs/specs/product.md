@@ -6,7 +6,7 @@ Working title: Model Pass.
 Product direction approved in conversation on 2026-09-22.
 This document describes the web application and a proposed Apps in Toss distribution path.
 The interface defaults to Korean and supports switching all application screens to English, with the choice retained across visits.
-On 2026-09-23, the operator prioritized Apps in Toss preparation; service pre-review and legal classification remain gates for public launch, not local implementation or test uploads.
+On 2026-09-23, Apps in Toss preparation was prioritized; service pre-review and legal classification remain gates for public launch, not local implementation or test uploads.
 
 ## Product Thesis
 
@@ -18,7 +18,7 @@ It is not a managed recruiting agency, candidate-ranking service, public model m
 
 ## Evidence and Assumptions
 
-The following problem evidence came from the operator's domain observations during product discovery:
+The following problem evidence came from domain observations during product discovery:
 
 - Junior hair designers often recruit and personally bear model-related costs for salon promotion exams.
 - Danggeun local job posts are a common initial recruitment channel.
@@ -100,7 +100,7 @@ Makeup rules are versioned by exam year and source.
 The historical version 1 template included a sex condition, permanent or semi-permanent eyebrow, eyeliner, and lip procedures, eyelash extensions, and tattoos or henna as hard failures; that snapshot remains readable but is not the current exam template.
 The 2026 version 2 template keeps the product's 19+ boundary and the exam's upper-age bound, labels model sex as a recruiter-specified opportunity condition, treats official score-deduction cases as recruiter review items, and does not exclude tattoos or henna.
 Removable day-of conditions such as makeup, lenses, accessories, and visible nail art are reminders.
-The source comparison and operator decision are recorded in `docs/notes/2026-09-24-makeup-exam-source-check.md`.
+The source comparison and decision are recorded in `docs/notes/2026-09-24-makeup-exam-source-check.md`.
 
 Official makeup rules must be rechecked against the applicable exam notice before each ruleset version is published.
 

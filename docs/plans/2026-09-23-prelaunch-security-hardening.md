@@ -2,7 +2,7 @@
 
 ## Direction
 
-The operator approved resolving the verified prelaunch review findings and opening a PR. Work in the main workspace on `fix/prelaunch-security-boundaries`, using the existing code style and no new dependency unless native tools cannot meet the image contract.
+Resolving the verified prelaunch review findings and opening a PR were approved. Work in the main workspace on `fix/prelaunch-security-boundaries`, using the existing code style and no new dependency unless native tools cannot meet the image contract.
 
 ## Steps
 
@@ -12,7 +12,7 @@ The operator approved resolving the verified prelaunch review findings and openi
 4. Update the frontend paths that expose changed behavior (attendance actions, selection reversal, image preparation if required, error localization). Add focused tests before implementation.
 5. Verify retention behavior and evaluate migration squash without resetting the existing local database, which contains data. Run the migration and pgTAP suites inside rollback-only transactions; use a separate empty test instance if a fresh-history proof is still needed. Do not remove applied migration history without proof that the production history is empty.
 6. Run focused tests, database tests, full `pnpm` quality gate, and a read-only adversarial review of the exact candidate. Repair confirmed blockers and re-run affected checks.
-7. Stage explicit files by concern, inspect the index, make conventional commits, push the branch, open a PR against `main`, and observe current-head CI and hosted reviews. Leave merge to the operator.
+7. Stage explicit files by concern, inspect the index, make conventional commits, push the branch, open a PR against `main`, and observe current-head CI and hosted reviews. Leave merge to the user.
 
 ## Verification
 

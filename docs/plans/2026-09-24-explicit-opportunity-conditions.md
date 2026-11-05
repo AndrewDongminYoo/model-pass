@@ -41,7 +41,7 @@ React 18, strict TypeScript, Zod, Vitest and Testing Library, Playwright, Supaba
 
 ## Review Focus
 
-Can a forged client drop or alter a locked rule, publish an unseen question, or cause the server to evaluate a different snapshot? Are failed preferred conditions non-blocking and visible without a score? Are applicant and recruiter labels the exact published questions in both locales? Does the rollout leave legacy live links unchanged until an operator decision?
+Can a forged client drop or alter a locked rule, publish an unseen question, or cause the server to evaluate a different snapshot? Are failed preferred conditions non-blocking and visible without a score? Are applicant and recruiter labels the exact published questions in both locales? Does the rollout leave legacy live links unchanged until a user decision?
 
 ### Task 1: Prove the exam source and legacy rollout state
 
@@ -55,7 +55,7 @@ Version 1 remains unchanged.
       Record source URL, access date, applicable year, and any rule that is not source-supported.
       Do not infer legal or medical eligibility from the notice.
 - [ ] Run a read-only, row-level production preflight for published opportunities whose snapshot contains a vague legacy field.
-      Use the authenticated operator's approved read-only channel; do not paste applicant data into a report.
+      Use the authenticated user's approved read-only channel; do not paste applicant data into a report.
       A starting query is:
 
 ```sql
@@ -78,7 +78,7 @@ where status = 'published'
   );
 ```
 
-- [ ] If the preflight returns rows, stop rollout and request an explicit close-and-repost or other operator treatment.
+- [ ] If the preflight returns rows, stop rollout and request an explicit close-and-repost or other user-chosen treatment.
       If the Q-net source is unavailable or conflicts with the draft locked rules, stop makeup-template promotion and resolve the source before implementation.
 - [ ] No code commit is made for this read-only gate.
       A source note and metadata change belong with Task 2's template commit after verification.
@@ -200,7 +200,7 @@ Update the new spec or plan if implementation uncovers an approved contract chan
 - [ ] Conduct a local adversarial review of the exact diff: tampered publication payloads, snapshot parity, RLS, legacy reads, and no scoring.
       Repair confirmed findings and rerun affected checks.
 - [ ] Re-run the read-only production legacy preflight immediately before deployment.
-      If it returns rows, stop and request an operator decision; do not mutate or block live links automatically.
+      If it returns rows, stop and request the user's decision; do not mutate or block live links automatically.
       Deployment, PR creation, and push require separate authorization.
 - [ ] Proposed commit for integration-only edits: `test(opportunities): cover explicit condition flows`.
 

@@ -28,7 +28,7 @@ The miniapp build does not render or call recruiter login, publication, or appli
 
 Anonymous public listing is disabled. First-visit opportunity discovery is deferred until service pre-review and legal classification are complete.
 The recruiter preview tells recruiters to share the job-scoped link because publication alone does not expose a listing on the app home screen.
-Before review or launch, the operator must confirm the legal and platform gates in the product specification.
+Before review or launch, the legal and platform gates in the product specification must be confirmed.
 
 ## Verification
 

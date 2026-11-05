@@ -2,7 +2,7 @@
 
 ## Decision
 
-On 2026-10-10 the operator chose Apps in Toss functional push as the first pre-appointment reminder channel (GitHub issue #9).
+On 2026-10-10 Apps in Toss functional push was chosen as the first pre-appointment reminder channel (GitHub issue #9).
 SMS and Kakao notifications are follow-up work and are out of scope here.
 The reminder addresses the no-show pain point recorded in `docs/notes/2026-10-07-salon-recruiter-interview.md`.
 
@@ -75,7 +75,7 @@ If the review requires one, `requestNotificationAgreement` is added in a separat
 
 ## External Preconditions
 
-These are operator actions in the Apps in Toss console and are tracked as `external-action` issues:
+These are manual actions in the Apps in Toss console and are tracked as `external-action` issues:
 
 1. Issue the partner mTLS certificate for `model-pass`. The workspace business verification is `REJECTED` (2026-10-10 console read: a business registration certificate issued within three months is required). The functional push documentation does not list business registration as a requirement, but whether certificate issuance needs it is unknown.
 2. Create a functional campaign and template, and pass the copy review.

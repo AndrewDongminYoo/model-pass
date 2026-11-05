@@ -1,6 +1,6 @@
 # 2026-10-07 Salon Recruiter Interview
 
-Source: an interview conducted by the operator on 2026-10-07, reported to the repository on 2026-10-10.
+Source: an interview conducted on 2026-10-07, reported to the repository on 2026-10-10.
 Sample: one interviewee, a salon manager-level hair professional.
 Confidence: low for frequency and market size (n = 1); moderate that the two pain points below are real for this interviewee and the staff the interviewee described.
 The interviewee and the salon are not identified because the repository is public.

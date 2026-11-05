@@ -2,7 +2,7 @@
 
 ## Status
 
-The operator approved the design direction in conversation on 2026-09-24.
+The design direction was approved in conversation on 2026-09-24.
 This specification defines the intended behavior for the implementation in progress.
 It extends the product specification in `docs/specs/product.md` without changing the pilot's 19+ boundary, recruiter-led selection, or prohibition on candidate ranking.
 
@@ -74,7 +74,7 @@ All applicant answers remain visible to the recruiter in submission order, witho
 
 No existing published rule snapshot is silently rewritten.
 Before rollout, a read-only production preflight checks whether published opportunities still contain the unspecified legacy questions.
-If any exist, deployment pauses for an operator-approved close-and-repost or other explicit treatment; this feature does not automatically change or block their live application links.
+If any exist, deployment pauses for an approved close-and-repost or other explicit treatment; this feature does not automatically change or block their live application links.
 Historical applications retain their original snapshots for audit.
 
 The historical version 1 makeup template names 2021 as its applicable exam year.

@@ -2,7 +2,7 @@
 
 ## Problem
 
-An external review identified direct opportunity writes, late attendance cancellation, broad cleanup credentials, applicant authorization ambiguity, unprocessed photo metadata, anonymous endpoint abuse, and unrestricted selection. The operator confirmed that no production tables have been created and requested fixes before publication in a PR.
+An external review identified direct opportunity writes, late attendance cancellation, broad cleanup credentials, applicant authorization ambiguity, unprocessed photo metadata, anonymous endpoint abuse, and unrestricted selection. It was confirmed that no production tables have been created, and fixes were requested before publication in a PR.
 
 ## Scope
 

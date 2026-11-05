@@ -15,7 +15,7 @@ The checks below use its 2026 public task document and FAQ, not the older 2021 t
 
 ## Product Decision
 
-On 2026-09-24, the operator chose to align version 2 with the reviewed official source: omit tattoos and henna as exclusions, treat score-deduction cases as recruiter review items, and label model sex as a recruiter-specified condition rather than an official same-sex restriction.
+On 2026-09-24, the decision was to align version 2 with the reviewed official source: omit tattoos and henna as exclusions, treat score-deduction cases as recruiter review items, and label model sex as a recruiter-specified condition rather than an official same-sex restriction.
 Version 1 snapshots remain readable but are not promoted as current exam rules.
 The platform's adult-only boundary remains 19+, regardless of the exam's 14–55 model range.
 Version 2 retains the official upper bound of 55 by the 2026 exam's birth-year rule; submission derives that bound from the applicant's date of birth rather than trusting a yes/no answer.

@@ -14,12 +14,12 @@ Three candidates with similar names were seen:
 - **마이미모**, a beauty-model matching app (App Store id6754086453). Its store page returned HTTP 404 on 2026-10-10 in two locales, and the Google Play search for its name did not list it, so only web search-result snippets were seen; they describe free or materials-only treatments and paid photo or video model work.
 - **미모온** by TOMATO D&C (Google Play `kr.co.app.mimoon`), listed as an app for beauty professionals. Its detail page could not be read.
 
-On 2026-10-10 the operator searched for "미모" independently and found two services, both of which the operator reports offer the same kind of service:
+On 2026-10-10 an independent search for "미모" found two services, both reported to offer the same kind of service:
 
-1. **미모** ("미용인 모여라", app listed as 미모온), [site](https://mi-mo.co.kr), Instagram `mi.mo_office`. The operator reports that its app does not yet look finished.
-2. **미몽**, Instagram `meemong_official`. The operator reports that it appears to be VC-funded; see the funding section below.
+1. **미모** ("미용인 모여라", app listed as 미모온), [site](https://mi-mo.co.kr), Instagram `mi.mo_office`. Its app is reported not to look finished yet.
+2. **미몽**, Instagram `meemong_official`. Reportedly, it appears to be VC-funded; see the funding section below.
 
-마이미모 stays a low-confidence candidate: its name contains "미모" and it was described as a beauty-model matching app, but it did not appear in the operator's search or the Google Play search, and its App Store page returns HTTP 404. That shows it is not currently listed, not that the interviewee could not have meant it.
+마이미모 stays a low-confidence candidate: its name contains "미모" and it was described as a beauty-model matching app, but it did not appear in that search or the Google Play search, and its App Store page returns HTTP 404. That shows it is not currently listed, not that the interviewee could not have meant it.
 Which app the interviewee meant is still unknown.
 Nothing in this note links either company to the fee complaint in the interview; that link waits for the interviewee's confirmation.
 
@@ -29,7 +29,7 @@ From the [mi-mo.co.kr](https://mi-mo.co.kr) home page:
 
 - Operator: (주)토마토디앤씨 (business registration 617-81-71210, Seocho-gu, Seoul); this matches the 미모온 Play developer TOMATO D&C.
 - Tagline: "미용인의 모든 순간을 함께!" and "구인·구직부터 쇼핑까지 한 번에".
-- Listed services: hair job recruiting and job seeking, professional hair shopping, and a community. Model recruiting or model matching is not mentioned on the home page; the operator's report that it offers the same service as 미몽 was not confirmed from public pages.
+- Listed services: hair job recruiting and job seeking, professional hair shopping, and a community. Model recruiting or model matching is not mentioned on the home page; the report that it offers the same service as 미몽 was not confirmed from public pages.
 - Fees, pricing, deposits, and no-show policy: not mentioned.
 - App status: Google Play and App Store download buttons are shown, with no launch date.
 
@@ -58,7 +58,7 @@ The article itself and the THE VC funding page (HTTP 403) were not read, so that
 ## Unknowns
 
 - Who buys 몽 and what it is spent on: unknown. A premium job-post purchase suggests recruiter-side spending, and the funding report names 몽 as the monetization path, but neither says which party pays.
-- Whether 미모 offers model recruiting at all: reported by the operator, not visible on its public home page.
+- Whether 미모 offers model recruiting at all: reported, not visible on its public home page.
 - Fee basis (per model, per booking, subscription, or percentage): unknown. No per-model commission is stated in public listings.
 - No-show policy (deposit, penalty, or replacement): unknown. Neither store listing nor the site home page mentions one.
 - The terms of service ([Notion page](https://darkened-heather-e4b.notion.site/2515f7435aa780e8969ff2702ff92218)) render client-side and could not be read by the fetch tool on 2026-10-10.

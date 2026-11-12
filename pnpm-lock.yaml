@@ -25,8 +25,8 @@ importers:
         version: 4.6.7
     devDependencies:
       '@apps-in-toss/web-framework':
-        specifier: 3.9.0
-        version: 3.9.0(typanion@3.14.0)(typescript@6.0.3)
+        specifier: 3.10.0
+        version: 3.10.0(typanion@3.14.0)(typescript@6.0.3)
       '@eslint/js':
         specifier: ^10.0.1
         version: 10.0.1(eslint@10.14.0(jiti@2.7.0))
@@ -91,12 +91,12 @@ packages:
     resolution: {integrity: sha512-1no0CXOhPEeSCrGduT37KMmCqA6irhowXa0S7AaPHb4RQSHGioR3wvvD7HHBCaUriMYs0EvtqRJfOgYd0ycKlQ==}
     engines: {node: '>=24'}
 
-  '@apps-in-toss/cli@3.9.0':
-    resolution: {integrity: sha512-snCigprheJojoZRqYtkHoZEYJDg5x5P4Th1MmJnHsUqhGKowr55urJ5ahDmgwFj1HQzTH4Co/df+vcLPlXciIQ==}
+  '@apps-in-toss/cli@3.10.0':
+    resolution: {integrity: sha512-rqtMfOat591nAmSFb2G/tVuuh3bLIRud0hewjR1G+g7W+IhCus86V5nAaoVvuG2MTmOx0d6qcDaJP3JgK1nwgg==}
     hasBin: true
 
-  '@apps-in-toss/web-framework@3.9.0':
-    resolution: {integrity: sha512-hGg1ri7KYbNZeeEiPFWy0efqv38sDuU8h4Ub/LldBZL/ZJy4D+1Ce3JNSX2qWDeLl+wfbb6hWdK3X9reJjEmPg==}
+  '@apps-in-toss/web-framework@3.10.0':
+    resolution: {integrity: sha512-ikqqAJ4C0MFxdPuBiIDEr3JA64ZHwsbD+tXBGvzR6cgwGipwAC8yS2bKTzsYgiD1Bwz+cpXBqt31284c8cgyKQ==}
     hasBin: true
 
   '@asamuzakjp/css-color@7.1.9':
@@ -1064,12 +1064,12 @@ packages:
   flatted@3.4.4:
     resolution: {integrity: sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q==}
 
-  flow-estree@0.339.0:
-    resolution: {integrity: sha512-uPUC/TsoXrHUklSF6qXke8rhHJZhdt/IUcPhN5SHk4V5YeJOQ+3DDoS8l2pOWx4CR6ZXIWS51OpDwpl74U3ZrQ==}
+  flow-estree@0.338.0:
+    resolution: {integrity: sha512-ol4C6cIEcL9nep6G0qa3BuJcO5cZCH07shxNpChJ/TotKQaz5OWtn4IqgpMNF0kHISdOnMApirDwp2LwWL+KhQ==}
     engines: {node: '>=18'}
 
-  flow-parser@0.339.0:
-    resolution: {integrity: sha512-v47E/2/ii6g+3QuPzQDohVq5MFqCO+mfLLFT0c2YJq2kjz2StZZ4e9qoqePINIj4W8vqexQ0G0RaefpunjdQAw==}
+  flow-parser@0.338.0:
+    resolution: {integrity: sha512-GF+ohfrTVlvsNhxfRkON49QKG5j+5oqGb8qpGwE6mYlhIBaXDsss/JzfIxpSwVXgWtw8z8kabf/pNo1jXor5NA==}
     engines: {node: '>=0.4.0'}
 
   fsevents@2.3.3:
@@ -1817,7 +1817,7 @@ snapshots:
       '@apps-in-toss/ait-format-proto': 1.0.0
       fflate: 0.8.3
 
-  '@apps-in-toss/cli@3.9.0(typanion@3.14.0)':
+  '@apps-in-toss/cli@3.10.0(typanion@3.14.0)':
     dependencies:
       '@apps-in-toss/ait-format': 1.0.0
       '@clack/prompts': 1.8.1
@@ -1832,9 +1832,9 @@ snapshots:
       - supports-color
       - typanion
 
-  '@apps-in-toss/web-framework@3.9.0(typanion@3.14.0)(typescript@6.0.3)':
+  '@apps-in-toss/web-framework@3.10.0(typanion@3.14.0)(typescript@6.0.3)':
     dependencies:
-      '@apps-in-toss/cli': 3.9.0(typanion@3.14.0)
+      '@apps-in-toss/cli': 3.10.0(typanion@3.14.0)
       '@webview-bridge/web': 1.7.10
       semver: 7.8.6
       valibot: 1.5.0(typescript@6.0.3)
@@ -2816,11 +2816,11 @@ snapshots:
 
   flatted@3.4.4: {}
 
-  flow-estree@0.339.0: {}
+  flow-estree@0.338.0: {}
 
-  flow-parser@0.339.0:
+  flow-parser@0.338.0:
     dependencies:
-      flow-estree: 0.339.0
+      flow-estree: 0.338.0
 
   fsevents@2.3.3:
     optional: true
@@ -2897,7 +2897,7 @@ snapshots:
       '@babel/preset-flow': 7.29.7(@babel/core@7.29.13)
       '@babel/preset-typescript': 7.29.7(@babel/core@7.29.13)
       '@babel/register': 7.29.13(@babel/core@7.29.13)
-      flow-parser: 0.339.0
+      flow-parser: 0.338.0
       graceful-fs: 4.2.11
       neo-async: 2.6.2
       picocolors: 1.1.1

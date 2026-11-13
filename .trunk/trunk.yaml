@@ -27,23 +27,19 @@ lint:
     - taplo
   enabled:
     - actionlint@1.7.12
-    - checkov@3.4.3
+    - checkov@3.4.5
     - git-diff-check
-    - osv-scanner@2.7.0
+    - osv-scanner@2.7.1
     - oxipng@10.2.1
-    - oxlint@1.92.0
     - pinact@4.1.1!
     - yamllint@1.38.0
     - eslint@10.14.0
     - markdownlint@0.50.0
-    - prettier@3.9.10
-    - trufflehog@3.99.8
+    - prettier@3.10.1
+    - trufflehog@3.99.9
 actions:
   enabled:
     - trunk-announce
     - trunk-fmt-pre-commit
     - trunk-upgrade-available
     - trunk-check-pre-push
-tools:
-  enabled:
-    - oxfmt@0.77.0

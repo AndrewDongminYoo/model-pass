@@ -16,7 +16,7 @@
   "keywords": [],
   "author": "",
   "license": "UNLICENSED",
-  "packageManager": "pnpm@11.24.0",
+  "packageManager": "pnpm@12.21.0",
   "type": "module",
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
@@ -41,7 +41,7 @@
     "jsdom": "^31.0.1",
     "prettier": "^3.10.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.72.2",
+    "typescript-eslint": "^8.73.0",
     "vite": "^8.3.8",
     "vitest": "^5.1.0"
   }

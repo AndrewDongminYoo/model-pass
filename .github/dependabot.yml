@@ -26,10 +26,10 @@ updates:
     ignore:
       # Runtime majors without a security fix stay off (decided 2026-10-24); react and react-dom 19.3.1 came as #28.
       # update-types limits this to version updates; security updates still open.
-      - dependency-name: "react"
+      - dependency-name: react
         update-types:
           - version-update:semver-major
-      - dependency-name: "react-dom"
+      - dependency-name: react-dom
         update-types:
           - version-update:semver-major
     groups:

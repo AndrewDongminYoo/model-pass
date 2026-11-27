@@ -48,6 +48,10 @@ jobs:
               --lock "$function_dir/deno.lock" \
               "$test_file"
           done
+      - name: Check Supabase mail port
+        run: |
+          sudo ss -ltnp 'sport = :54324'
+          docker ps --format 'table {{.Names}}\t{{.Ports}}'
       - run: supabase start
       - run: supabase test db
       - run: pnpm exec playwright install --with-deps chromium
